@@ -1,0 +1,160 @@
+{
+  "topologySeed": 42,
+  "generatedAt": "2026-10-06T10:09:52.499077Z",
+  "reports": [
+    {
+      "nodes": 50,
+      "ttl": 3,
+      "dedup": true,
+      "deliveryRatio": 0.2653061224489796,
+      "delivered": 13,
+      "frames": 30,
+      "duplicatePackets": 2,
+      "relayPackets": 7,
+      "computeMs": 144,
+      "hopDistribution": {
+        "1": 3,
+        "2": 4,
+        "3": 6
+      },
+      "note": "CPU runtime; not real BLE latency. Synthetic ring + seeded shortcuts; no RF/battery model."
+    },
+    {
+      "nodes": 50,
+      "ttl": 6,
+      "dedup": true,
+      "deliveryRatio": 0.8775510204081632,
+      "delivered": 43,
+      "frames": 148,
+      "duplicatePackets": 31,
+      "relayPackets": 35,
+      "computeMs": 440,
+      "hopDistribution": {
+        "1": 3,
+        "2": 4,
+        "3": 6,
+        "4": 8,
+        "5": 14,
+        "6": 8
+      },
+      "note": "CPU runtime; not real BLE latency. Synthetic ring + seeded shortcuts; no RF/battery model."
+    },
+    {
+      "nodes": 50,
+      "ttl": 10,
+      "dedup": true,
+      "deliveryRatio": 1.0,
+      "delivered": 49,
+      "frames": 186,
+      "duplicatePackets": 44,
+      "relayPackets": 49,
+      "computeMs": 431,
+      "hopDistribution": {
+        "1": 3,
+        "2": 4,
+        "3": 6,
+        "4": 8,
+        "5": 14,
+        "6": 8,
+        "7": 3,
+        "8": 2,
+        "9": 1
+      },
+      "note": "CPU runtime; not real BLE latency. Synthetic ring + seeded shortcuts; no RF/battery model."
+    },
+    {
+      "nodes": 100,
+      "ttl": 3,
+      "dedup": true,
+      "deliveryRatio": 0.21212121212121213,
+      "delivered": 21,
+      "frames": 46,
+      "duplicatePackets": 2,
+      "relayPackets": 9,
+      "computeMs": 99,
+      "hopDistribution": {
+        "1": 3,
+        "2": 6,
+        "3": 12
+      },
+      "note": "CPU runtime; not real BLE latency. Synthetic ring + seeded shortcuts; no RF/battery model."
+    },
+    {
+      "nodes": 100,
+      "ttl": 6,
+      "dedup": true,
+      "deliveryRatio": 0.9292929292929293,
+      "delivered": 92,
+      "frames": 308,
+      "duplicatePackets": 62,
+      "relayPackets": 73,
+      "computeMs": 389,
+      "hopDistribution": {
+        "1": 3,
+        "2": 6,
+        "3": 12,
+        "4": 24,
+        "5": 28,
+        "6": 19
+      },
+      "note": "CPU runtime; not real BLE latency. Synthetic ring + seeded shortcuts; no RF/battery model."
+    },
+    {
+      "nodes": 100,
+      "ttl": 10,
+      "dedup": true,
+      "deliveryRatio": 1.0,
+      "delivered": 99,
+      "frames": 398,
+      "duplicatePackets": 100,
+      "relayPackets": 99,
+      "computeMs": 470,
+      "hopDistribution": {
+        "1": 3,
+        "2": 6,
+        "3": 12,
+        "4": 24,
+        "5": 28,
+        "6": 19,
+        "7": 5,
+        "8": 2
+      },
+      "note": "CPU runtime; not real BLE latency. Synthetic ring + seeded shortcuts; no RF/battery model."
+    },
+    {
+      "nodes": 10,
+      "ttl": 6,
+      "dedup": true,
+      "deliveryRatio": 1.0,
+      "delivered": 9,
+      "frames": 30,
+      "duplicatePackets": 6,
+      "relayPackets": 9,
+      "computeMs": 43,
+      "hopDistribution": {
+        "1": 3,
+        "2": 2,
+        "3": 3,
+        "4": 1
+      },
+      "note": "CPU runtime; not real BLE latency. Synthetic ring + seeded shortcuts; no RF/battery model."
+    },
+    {
+      "nodes": 10,
+      "ttl": 6,
+      "dedup": false,
+      "deliveryRatio": 1.0,
+      "delivered": 9,
+      "frames": 74,
+      "duplicatePackets": 0,
+      "relayPackets": 25,
+      "computeMs": 193,
+      "hopDistribution": {
+        "6": 7,
+        "5": 1,
+        "2": 1
+      },
+      "note": "CPU runtime; not real BLE latency. Synthetic ring + seeded shortcuts; no RF/battery model."
+    }
+  ]
+}
