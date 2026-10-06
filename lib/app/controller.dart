@@ -27,7 +27,9 @@ class AppController extends ChangeNotifier {
           final current = router;
           if (current != null) {
             messages = await current.store.messages();
+            // Take the router's error once so a dismissed banner stays dismissed.
             error = current.lastError ?? error;
+            current.lastError = null;
           }
           notifyListeners();
         })
@@ -41,6 +43,7 @@ class AppController extends ChangeNotifier {
   Future<void> start({required bool simulated}) async {
     busy = true;
     error = null;
+    String? warning;
     notifyListeners();
     try {
       await stop();
@@ -75,9 +78,18 @@ class AppController extends ChangeNotifier {
         if (!Platform.isAndroid) {
           throw UnsupportedError('Chế độ BLE cần điện thoại Android');
         }
-        final identity = await Identity.create(
-          saved: await AndroidBleTransport.loadIdentity(),
-        );
+        Identity identity;
+        try {
+          identity = await Identity.create(
+            saved: await AndroidBleTransport.loadIdentity(),
+          );
+        } catch (_) {
+          // Keystore key lost or saved seeds unreadable: start with a new ID
+          // instead of leaving BLE unusable.
+          identity = await Identity.create();
+          warning =
+              'Không đọc được danh tính đã lưu nên đã tạo ID mới. Thiết bị khác sẽ thấy bạn như một người mới.';
+        }
         await AndroidBleTransport.saveIdentity(await identity.export());
         router = MeshRouter(
           identity: identity,
@@ -91,6 +103,7 @@ class AppController extends ChangeNotifier {
         await router!.start();
       }
       await _refresh();
+      error = warning ?? error;
     } catch (e) {
       error = '$e';
       await stop();
@@ -100,7 +113,9 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  Future<void> send(
+  /// Returns whether the message was published; [error] may still carry a
+  /// warning (an SOS sent without GPS) when it was.
+  Future<bool> send(
     MessageKind kind,
     String text, {
     Contact? recipient,
@@ -110,8 +125,9 @@ class AppController extends ChangeNotifier {
     if (r == null || !r.running) {
       error = 'Bật mạng BLE hoặc mô phỏng trước khi gửi';
       notifyListeners();
-      return;
+      return false;
     }
+    var published = false;
     busy = true;
     error = null;
     notifyListeners();
@@ -132,6 +148,7 @@ class AppController extends ChangeNotifier {
         MessageBody(text, latitude: lat, longitude: lon),
         recipient: recipient,
       );
+      published = true;
       if (demo) {
         await _network!.drain(_demoRouters);
         if (kind == MessageKind.sos) {
@@ -151,6 +168,7 @@ class AppController extends ChangeNotifier {
       busy = false;
       notifyListeners();
     }
+    return published;
   }
 
   Future<void> stop() async {
