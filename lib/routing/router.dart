@@ -193,6 +193,12 @@ class MeshRouter {
     await store.retain(p);
     stats.received++;
     final forMe = !p.broadcast && hex(p.recipient) == identity.id;
+    // Relay before reading the body: a signed packet whose body this node
+    // cannot decode is still forwarded to nodes that may understand it.
+    if (p.kind != MessageKind.hello && !forMe && p.hops < p.maxHops) {
+      await _broadcast(p, except: via);
+      stats.relayed++;
+    }
     if (p.kind == MessageKind.ack && p.payload.length == 16) {
       // Relays also settle the original so they stop forwarding it.
       await store.acknowledge(hex(p.payload), sender);
@@ -221,10 +227,6 @@ class MeshRouter {
         await store.retain(ack);
         await _broadcast(ack);
       }
-    }
-    if (p.kind != MessageKind.hello && !forMe && p.hops < p.maxHops) {
-      await _broadcast(p, except: via);
-      stats.relayed++;
     }
   }
 
