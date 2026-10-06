@@ -491,7 +491,7 @@ class _HomePageState extends State<HomePage> {
     if (recipientId != null && recipientId != '' && contact == null) {
       return;
     }
-    await c.send(
+    final sent = await c.send(
       contact == null ? MessageKind.chat : MessageKind.privateChat,
       text,
       recipient: contact,
@@ -499,7 +499,7 @@ class _HomePageState extends State<HomePage> {
     if (mounted) {
       FocusScope.of(context).unfocus();
     }
-    if (c.error == null) {
+    if (sent) {
       input.clear();
     }
   }
