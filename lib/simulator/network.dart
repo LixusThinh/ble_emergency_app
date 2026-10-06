@@ -23,6 +23,18 @@ class SimNetwork {
     tb._events.add(PeerConnected(tb.links[a]!));
   }
 
+  /// Re-announces an existing link, as Android does after an MTU exchange.
+  void renegotiate(String a, String b, {required int mtu}) {
+    final ta = node(a), tb = node(b);
+    if (!ta.links.containsKey(b)) {
+      return;
+    }
+    ta.links[b] = Peer(b, mtu: mtu);
+    tb.links[a] = Peer(a, mtu: mtu);
+    ta._events.add(PeerConnected(ta.links[b]!));
+    tb._events.add(PeerConnected(tb.links[a]!));
+  }
+
   void disconnect(String a, String b) {
     node(a).links.remove(b);
     node(b).links.remove(a);
