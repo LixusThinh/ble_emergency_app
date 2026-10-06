@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ble_emergency_app/app/controller.dart';
+import 'package:ble_emergency_app/core/packet.dart';
 import 'package:ble_emergency_app/main.dart';
 
 void main() {
@@ -18,5 +20,17 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Tin nhắn sẽ xuất hiện ở đây.'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+  test('dismissed router error does not come back on the next send', () async {
+    final c = AppController();
+    addTearDown(c.stop);
+    expect(await c.send(MessageKind.chat, 'chưa bật mạng'), isFalse);
+    await c.start(simulated: true);
+    c.router!.lastError = 'Peer disconnected';
+    expect(await c.send(MessageKind.chat, 'một'), isTrue);
+    expect(c.error, 'Peer disconnected');
+    c.error = null;
+    expect(await c.send(MessageKind.chat, 'hai'), isTrue);
+    expect(c.error, isNull);
   });
 }

@@ -31,7 +31,7 @@ Transport chỉ biết peer, MTU và frame. Router nhận frame, ghép packet, x
 - Một thao tác truyền đang chờ callback tại một thời điểm; timeout 10 giây. Mỗi peer có MTU riêng. MTU yêu cầu 185; fallback 23.
 - Scan 12 giây, nghỉ 18 giây. Thử lại kết nối sau 30 giây; tối đa 4 kết nối central. Thực tế số kết nối đồng thời tùy phần cứng.
 - Foreground service loại `connectedDevice`; FlutterEngine giữ trong process khi Activity bị hủy. Không tự khởi động sau reboot/force-stop/process kill. Background vẫn cần xác minh trên từng hãng điện thoại.
-- Quyền BLE Android 12+ xin khi bật mạng; Android cũ xin vị trí cho scan. GPS xin riêng khi gửi SOS. Android 13+ vẫn có foreground service dù quyền thông báo chưa được cấp; người dùng có thể bật thông báo trong cài đặt.
+- Quyền BLE Android 12+ xin khi bật mạng; Android cũ xin vị trí cho scan. GPS xin riêng khi gửi SOS. Android 13+ xin thêm quyền thông báo khi bật mạng; nếu từ chối, BLE và foreground service vẫn chạy nhưng thông báo bị ẩn.
 - Không dùng `flutter_blue_plus` / plugin peripheral: bridge Kotlin triển khai cả hai vai trò để tránh phối hợp hai plugin có vòng đời GATT khác nhau.
 
 ## Wire protocol v1
@@ -62,17 +62,17 @@ Frame có header 12 byte: magic `F`, version, token 4 byte, index uint16, totalF
 
 ## Routing và store-and-forward
 
-1. Kết nối mới: gửi HELLO ký số, sau đó sync gói lưu chưa hết hạn.
+1. Kết nối mới: gửi HELLO ký số, sau đó sync gói lưu chưa hết hạn. HELLO tạo mới cho mỗi kết nối, không lưu chờ gửi. Android báo lại một kết nối đang mở (đổi MTU, mất một vai trò GATT) chỉ cập nhật MTU, không gửi HELLO hay sync lại.
 2. Tin mới: ký/mã hóa, lưu packet và bản ghi UI trước khi gửi.
 3. Nhận packet: kiểm tra cấu trúc, dedup, tuổi tin (24 giờ), lệch thời gian tương lai ≤5 phút và chữ ký.
 4. Nhận tin của mình hoặc broadcast: lưu inbox. Với tin riêng gửi ACK có chữ ký.
-5. Nếu còn chặng và không phải tin riêng đã đến đích: gửi cho các peer khác nguồn vào.
-6. Outbox sync ưu tiên SOS → ACK → trạng thái → HELLO → chat. Không ngắt một packet đang truyền để chen SOS.
+5. Nếu còn chặng và không phải tin riêng đã đến đích: gửi cho các peer khác nguồn vào. Bước này chạy trước khi đọc body, nên gói có chữ ký hợp lệ mà node không giải mã được vẫn được chuyển tiếp.
+6. Outbox sync ưu tiên SOS → ACK → trạng thái → chat. Không ngắt một packet đang truyền để chen SOS.
 7. Gặp peer mới hoặc kết nối lại: sync gói chưa hết hạn. Dedup/pending dùng cùng bảng packets; tối đa 5000 gói. Tin UI giữ tối đa 2000 bản ghi.
 
-ACK chỉ xác nhận tin riêng, và chỉ được chấp nhận khi sender của ACK trùng recipient của tin gốc. Broadcast không có xác nhận toàn mạng; UI chỉ thể hiện đã lưu/chuyển tiếp. Tin lỗi gửi được giữ để thử khi kết nối lại. Không có retry vô hạn trên kết nối đang giữ nguyên.
+ACK chỉ xác nhận tin riêng, và chỉ được chấp nhận khi sender của ACK trùng recipient của tin gốc. Mọi node đang giữ tin gốc, kể cả relay, đánh dấu nó đã xong khi thấy ACK hợp lệ và ngừng sync tin đó. Broadcast không có xác nhận toàn mạng; UI chỉ thể hiện đã lưu/chuyển tiếp. Tin lỗi gửi được giữ để thử khi kết nối lại. Không có retry vô hạn trên kết nối đang giữ nguyên.
 
-Thuật toán giữ bản nhận đầu tiên, nên tuyến dài đến trước có thể làm giảm độ phủ trong giới hạn TTL; không đảm bảo tìm đường ngắn nhất. Tin relay vẫn được giữ dù đích đã nhận, đến hết thời hạn. Không có global ACK cho broadcast.
+Thuật toán giữ bản nhận đầu tiên, nên tuyến dài đến trước có thể làm giảm độ phủ trong giới hạn TTL; không đảm bảo tìm đường ngắn nhất. Broadcast và chính gói ACK vẫn được relay giữ và sync đến hết thời hạn 24 giờ. Thời hạn của ACK không được rút ngắn: người nhận bỏ qua bản trùng của tin đã nhận nên không gửi lại ACK, và nếu ACK hết hạn trước khi gặp người gửi thì người gửi không bao giờ nhận được xác nhận. Không có global ACK cho broadcast.
 
 ## Bảo mật
 

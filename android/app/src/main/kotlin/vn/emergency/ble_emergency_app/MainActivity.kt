@@ -28,6 +28,7 @@ class MainActivity : FlutterActivity() {
     companion object { private var retainedEngine: FlutterEngine? = null }
     private var permissionResult: MethodChannel.Result? = null
     private var permissionAction: (() -> Unit)? = null
+    private var permissionRequired: Array<String> = emptyArray()
     private val handler = Handler(Looper.getMainLooper())
     override fun provideFlutterEngine(context: Context): FlutterEngine? = retainedEngine
     override fun shouldDestroyEngineWithHost(): Boolean = false
@@ -44,7 +45,9 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "start" -> {
                         val required = if (Build.VERSION.SDK_INT >= 31) arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT) else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
-                        withPermissions(required, result) { engine.start(); startForegroundService(Intent(this, MeshService::class.java)); result.success(null) }
+                        // Notifications show the foreground service on Android 13+; BLE still starts if the user declines.
+                        val optional = if (Build.VERSION.SDK_INT >= 33) arrayOf(Manifest.permission.POST_NOTIFICATIONS) else emptyArray()
+                        withPermissions(required, result, optional) { engine.start(); startForegroundService(Intent(this, MeshService::class.java)); result.success(null) }
                     }
                     "stop" -> { engine.stop(); stopService(Intent(this, MeshService::class.java)); result.success(null) }
                     "send" -> engine.send(call.argument<String>("id")!!, call.argument<ByteArray>("data")!!, result)
@@ -56,18 +59,19 @@ class MainActivity : FlutterActivity() {
             } catch (e: Exception) { result.error("BLE_ERROR", e.message, null) }
         }
     }
-    private fun withPermissions(required: Array<String>, result: MethodChannel.Result, action: () -> Unit) {
-        val missing = required.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+    private fun withPermissions(required: Array<String>, result: MethodChannel.Result, optional: Array<String> = emptyArray(), action: () -> Unit) {
+        val missing = (required + optional).filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
         if (missing.isEmpty()) { action(); return }
         if (permissionResult != null) { result.error("BUSY", "Đang xin quyền", null); return }
-        permissionResult = result; permissionAction = action; requestPermissions(missing.toTypedArray(), 704)
+        permissionResult = result; permissionAction = action; permissionRequired = required; requestPermissions(missing.toTypedArray(), 704)
     }
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode != 704) return
-        val result = permissionResult; val action = permissionAction; permissionResult = null; permissionAction = null
+        val result = permissionResult; val action = permissionAction; val required = permissionRequired
+        permissionResult = null; permissionAction = null; permissionRequired = emptyArray()
         val locationRequest = permissions.any { it == Manifest.permission.ACCESS_COARSE_LOCATION || it == Manifest.permission.ACCESS_FINE_LOCATION }
-        val allowed = if (locationRequest && Build.VERSION.SDK_INT >= 31) checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED || checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED else grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
+        val allowed = if (locationRequest && Build.VERSION.SDK_INT >= 31) checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED || checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED else required.all { checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
         if (allowed) { try { action?.invoke() } catch (e: Exception) { result?.error("BLE_ERROR", e.message, null) } }
         else result?.error("PERMISSION", "Chưa cấp quyền. Mở Cài đặt ứng dụng để cấp quyền Bluetooth/vị trí.", null)
     }
