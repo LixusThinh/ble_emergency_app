@@ -5,7 +5,7 @@ Môi trường: Windows, Flutter 3.47.4 stable / Dart 3.13.3, Android Studio JBR
 | Kiểm tra | Kết quả |
 |---|---|
 | `flutter analyze` | Không có issue |
-| `flutter test` | 16 test đạt: mesh/crypto/fragmentation/storage policy, hello/MTU khi kết nối lại, relay dừng sau ACK, layout nhỏ, simulator isolate |
+| `flutter test` | 18 test đạt: mesh/crypto/fragmentation/storage policy, hello/MTU khi kết nối lại, relay dừng sau ACK, relay gói không đọc được, banner lỗi, layout nhỏ, simulator isolate |
 | Android integration | Đạt: Keystore, SQLite đóng/mở, demo 3 node, SOS, tin riêng/ACK, simulator 10 node |
 | APK debug Android | Build thành công; artifact bàn giao build từ `lib/main.dart` |
 | Simulator CLI | 50/100 node với TTL 3, 6, 10; so sánh dedup 10 node |

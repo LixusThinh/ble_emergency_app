@@ -80,8 +80,10 @@ BLE máy thật chưa thể được xác nhận chỉ qua emulator. Cần ít n
 
 Tin broadcast chưa có ACK toàn mạng; UI không khẳng định cứu hộ đã nhận. Tin riêng ACK chỉ chứng minh app người nhận đã xử lý, không chứng minh một người đã đọc.
 
+Số chặng đã đi (hopCount) không nằm trong chữ ký để relay không cần khóa người gửi. Relay độc hại có thể sửa số này: đặt bằng giới hạn để chặn tin đi tiếp, hoặc hạ xuống để tin đi xa hơn. Giới hạn chặng thì có chữ ký. Vì vậy số chặng hiển thị trên UI không phải bằng chứng về đường đi.
+
 Chữ ký xác nhận khóa nguồn phát, không chứng minh tên/người/cơ quan ngoài đời. Mã hóa tin riêng chưa có forward secrecy; SQLite local chứa nội dung đã giải mã. Đối chiếu ID trực tiếp trước khi gửi tin nhạy cảm. Xem [kiến trúc](docs/ARCHITECTURE.md) và [kế hoạch kiểm thử](docs/TEST_PLAN.md) để tiếp tục đồ án.
 
 Chưa triển khai iOS, bản đồ offline và giao diện điều chỉnh duty cycle. Không dùng số CPU simulator làm số đo latency BLE.
 
-Kết quả bàn giao: analyzer sạch, 16 test đạt, integration Android đạt. Xem [kết quả xác minh](docs/VERIFICATION.md) và ảnh giao diện trong `docs/screenshots/`.
+Kết quả bàn giao: analyzer sạch, 18 test đạt, integration Android đạt. Xem [kết quả xác minh](docs/VERIFICATION.md) và ảnh giao diện trong `docs/screenshots/`.
