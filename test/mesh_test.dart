@@ -210,6 +210,81 @@ void main() {
     );
     await f.routers[0].store.acknowledge(p.messageId, f.routers[1].identity.id);
     expect((await f.routers[0].store.messages()).single.acknowledged, isFalse);
+    expect(
+      (await f.routers[0].store.pending()).any(
+        (q) => q.messageId == p.messageId,
+      ),
+      isTrue,
+    );
+  });
+  test('relay stops forwarding a private message once it is ACKed', () async {
+    final f = await fixture(count: 4);
+    f.network.connect('0', '1');
+    f.network.connect('1', '2');
+    await f.network.drain(f.routers);
+    final target = f.routers[2].identity;
+    final p = await f.routers[0].publish(
+      MessageKind.privateChat,
+      MessageBody('bí mật'),
+      recipient: Contact(target.id, 'C', target.publicExchange),
+    );
+    await f.network.drain(f.routers);
+    expect(
+      (await f.routers[1].store.pending()).any(
+        (q) => q.messageId == p.messageId,
+      ),
+      isFalse,
+    );
+    f.network.connect('1', '3');
+    await f.network.drain(f.routers);
+    expect(await f.routers[3].store.hasSeen(p.messageId), isFalse);
+  });
+  test('reconnects do not queue or resend old hellos', () async {
+    final f = await fixture(count: 2);
+    final a = f.routers[0];
+    Future<int> connectFrames() async {
+      final before = a.stats.sentFrames;
+      f.network.connect('0', '1', mtu: 23);
+      await f.network.drain(f.routers);
+      return a.stats.sentFrames - before;
+    }
+
+    final first = await connectFrames();
+    for (var i = 0; i < 5; i++) {
+      f.network.disconnect('0', '1');
+      await f.network.drain(f.routers);
+      await connectFrames();
+    }
+    f.network.disconnect('0', '1');
+    await f.network.drain(f.routers);
+    expect(await connectFrames(), first);
+    expect(
+      (await a.store.pending()).any(
+        (p) =>
+            p.kind == MessageKind.hello &&
+            hex(p.signingKey) == hex(a.identity.publicSigning),
+      ),
+      isFalse,
+    );
+  });
+  test('MTU re-announcement does not resync but updates MTU', () async {
+    final f = await fixture(count: 2);
+    final a = f.routers[0];
+    f.network.connect('0', '1', mtu: 23);
+    await f.network.drain(f.routers);
+    await a.publish(MessageKind.chat, MessageBody('trước'));
+    await f.network.drain(f.routers);
+    final before = a.stats.sentFrames;
+    f.network.renegotiate('0', '1', mtu: 185);
+    await f.network.drain(f.routers);
+    expect(a.stats.sentFrames, before);
+    final p = await a.publish(MessageKind.chat, MessageBody('sau'));
+    await f.network.drain(f.routers);
+    expect(
+      a.stats.sentFrames - before,
+      Fragmenter.split(p.copy(hops: 1).encode(), mtu: 185).length,
+    );
+    expect(await f.routers[1].store.hasSeen(p.messageId), isTrue);
   });
   test('forged packet is not stored or relayed', () async {
     final f = await fixture();
