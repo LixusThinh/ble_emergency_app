@@ -267,6 +267,37 @@ void main() {
       isFalse,
     );
   });
+  test('signed broadcast with an unreadable body is still relayed', () async {
+    final f = await fixture();
+    f.network.connect('0', '1');
+    f.network.connect('1', '2');
+    await f.network.drain(f.routers);
+    final origin = f.routers[0].identity;
+    final p = await origin.sign(
+      Packet(
+        kind: MessageKind.chat,
+        maxHops: 6,
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        id: randomBytes(16),
+        signingKey: origin.publicSigning,
+        exchangeKey: origin.publicExchange,
+        recipient: Uint8List(8),
+        payload: Uint8List.fromList([9, 1, 2]),
+        signature: Uint8List(64),
+      ),
+    );
+    for (final frame in Fragmenter.split(p.copy(hops: 1).encode(), mtu: 185)) {
+      await f.network.node('0').send('1', frame);
+    }
+    await f.network.drain(f.routers);
+    expect(await f.routers[2].store.hasSeen(p.messageId), isTrue);
+    expect(
+      (await f.routers[1].store.messages()).any(
+        (m) => m.packet.messageId == p.messageId,
+      ),
+      isFalse,
+    );
+  });
   test('MTU re-announcement does not resync but updates MTU', () async {
     final f = await fixture(count: 2);
     final a = f.routers[0];
