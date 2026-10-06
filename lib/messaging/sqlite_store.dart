@@ -107,10 +107,9 @@ class SqliteStore implements MessageStore {
           .toList();
   @override
   Future<void> acknowledge(String id, String senderId) async {
-    final rows = await db.query(
-      'messages',
-      where: 'id = ? AND outgoing = 1',
-      whereArgs: [id],
+    final rows = await db.rawQuery(
+      'SELECT bytes FROM packets WHERE id = ? UNION ALL SELECT bytes FROM messages WHERE id = ? LIMIT 1',
+      [id, id],
     );
     if (rows.isEmpty) {
       return;
@@ -123,7 +122,7 @@ class SqliteStore implements MessageStore {
       await t.update(
         'messages',
         {'acked': 1},
-        where: 'id = ?',
+        where: 'id = ? AND outgoing = 1',
         whereArgs: [id],
       );
       await t.update('packets', {'acked': 1}, where: 'id = ?', whereArgs: [id]);

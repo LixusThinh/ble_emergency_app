@@ -29,6 +29,7 @@ class MeshRouter {
   final _assembler = Reassembler();
   final Map<String, Set<String>> _sent = {};
   final Map<String, String> _peerNodes = {};
+  final Set<String> _links = {};
   Future<void> _work = Future.value();
   StreamSubscription<TransportEvent>? _subscription;
   String? lastError;
@@ -68,16 +69,21 @@ class MeshRouter {
 
   Future<void> _event(TransportEvent event) async {
     if (event is PeerConnected) {
-      _sent.remove(event.peer.id);
-      final hello = await _packet(
-        MessageKind.hello,
-        MessageBody(name).encode(),
-        ttl: 1,
-      );
-      await store.retain(hello);
-      await _send(hello, event.peer);
-      await sync(event.peer);
+      // Android re-announces a link after MTU exchange or when one of its two
+      // GATT roles drops; only a new link needs hello and store-and-forward.
+      if (_links.add(event.peer.id)) {
+        _sent.remove(event.peer.id);
+        // Hello is link-local and regenerated per link, so it is never queued.
+        final hello = await _packet(
+          MessageKind.hello,
+          MessageBody(name).encode(),
+          ttl: 1,
+        );
+        await _send(hello, event.peer);
+        await sync(event.peer);
+      }
     } else if (event is PeerDisconnected) {
+      _links.remove(event.id);
       _sent.remove(event.id);
       _peerNodes.remove(event.id);
     } else if (event is FrameReceived) {
@@ -187,7 +193,8 @@ class MeshRouter {
     await store.retain(p);
     stats.received++;
     final forMe = !p.broadcast && hex(p.recipient) == identity.id;
-    if (p.kind == MessageKind.ack && forMe && p.payload.length == 16) {
+    if (p.kind == MessageKind.ack && p.payload.length == 16) {
+      // Relays also settle the original so they stop forwarding it.
       await store.acknowledge(hex(p.payload), sender);
     } else if (p.kind != MessageKind.hello &&
         p.kind != MessageKind.ack &&
@@ -223,7 +230,7 @@ class MeshRouter {
 
   Future<void> sync(Peer peer) async {
     for (final p in await store.pending()) {
-      if (p.hops < p.maxHops && (p.kind != MessageKind.hello || p.hops == 0)) {
+      if (p.hops < p.maxHops && p.kind != MessageKind.hello) {
         try {
           await _send(p, peer);
         } catch (e) {
@@ -269,6 +276,7 @@ class MeshRouter {
     await transport.stop();
     await _subscription?.cancel();
     await idle;
+    _links.clear();
     _notify();
   }
 

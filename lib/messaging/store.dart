@@ -23,6 +23,9 @@ abstract interface class MessageStore {
   Future<List<Packet>> pending();
   Future<void> save(StoredMessage message);
   Future<List<StoredMessage>> messages();
+
+  /// Settles packet [id] when [senderId] is its private recipient, on the
+  /// origin and on relays alike, so it leaves [pending].
   Future<void> acknowledge(String id, String senderId);
   Future<void> close();
 }
@@ -59,13 +62,13 @@ class MemoryStore implements MessageStore {
         ..sort((a, b) => b.packet.timestamp.compareTo(a.packet.timestamp));
   @override
   Future<void> acknowledge(String id, String senderId) async {
-    final m = _messages[id];
-    if (m != null &&
-        m.outgoing &&
-        !m.packet.broadcast &&
-        hex(m.packet.recipient) == senderId) {
+    final m = _messages[id], p = _packets[id] ?? m?.packet;
+    if (p == null || p.broadcast || hex(p.recipient) != senderId) {
+      return;
+    }
+    _acked.add(id);
+    if (m != null && m.outgoing) {
       m.acknowledged = true;
-      _acked.add(id);
     }
   }
 
