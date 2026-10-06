@@ -84,4 +84,4 @@ Chữ ký xác nhận khóa nguồn phát, không chứng minh tên/người/cơ
 
 Chưa triển khai iOS, bản đồ offline và giao diện điều chỉnh duty cycle. Không dùng số CPU simulator làm số đo latency BLE.
 
-Kết quả bàn giao: analyzer sạch, 13 test đạt, integration Android đạt. Xem [kết quả xác minh](docs/VERIFICATION.md) và ảnh giao diện trong `docs/screenshots/`.
+Kết quả bàn giao: analyzer sạch, 16 test đạt, integration Android đạt. Xem [kết quả xác minh](docs/VERIFICATION.md) và ảnh giao diện trong `docs/screenshots/`.

@@ -9,7 +9,7 @@ dart run tool/benchmark.dart
 flutter drive --driver=test_driver/integration.dart --target=integration_test/app_flow_test.dart -d <device-id>
 ```
 
-`flutter test`: packet binary/chữ ký, tamper, khôi phục danh tính, MTU 23, ghép đảo thứ tự, fragment sai, A–B–C, TTL, vòng dedup, gặp thiết bị gián đoạn, ciphertext/ACK, ACK sai người và ưu tiên SOS trong outbox; thêm kiểm thử layout trên màn hình 360×800.
+`flutter test`: packet binary/chữ ký, tamper, khôi phục danh tính, MTU 23, ghép đảo thứ tự, fragment sai, A–B–C, TTL, vòng dedup, gặp thiết bị gián đoạn, ciphertext/ACK, ACK sai người, relay ngừng chuyển tin riêng đã có ACK, kết nối lại không gửi lại hello cũ, báo lại MTU không đồng bộ lại và ưu tiên SOS trong outbox; thêm kiểm thử layout trên màn hình 360×800.
 
 Integration chạy trên Android: lưu/đọc lại Keystore, SQLite qua đóng/mở database, màn hình ban đầu, demo ba node, gửi SOS, nhắn riêng và ACK, chạy simulator. Ảnh giao diện lưu vào `docs/screenshots/` bằng test driver. Integration không kiểm tra sóng BLE.
 
