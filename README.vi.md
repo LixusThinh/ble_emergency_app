@@ -66,7 +66,8 @@ lib/
   messaging/     SQLite và MemoryStore
   simulator/     Network giả và benchmark scenario
   app/           Điều phối UI
-  main.dart      4 màn hình Flutter
+  ui/            Theme, 4 tab giao diện và widget dùng chung
+  main.dart      Điểm khởi động ứng dụng
 android/app/src/main/kotlin/vn/emergency/ble_emergency_app/
   MainActivity.kt  Permission, method channel, GPS, Keystore
   BleEngine.kt     GATT client/server, advertising, scan, transmit queue
@@ -89,4 +90,4 @@ Chữ ký xác nhận khóa nguồn phát, không chứng minh tên/người/cơ
 
 Chưa triển khai iOS, bản đồ offline và giao diện điều chỉnh duty cycle. Không dùng số CPU simulator làm số đo latency BLE.
 
-Kết quả bàn giao: analyzer sạch, 18 test đạt, integration Android đạt. Xem [kết quả xác minh](docs/VERIFICATION.md) và ảnh giao diện trong `docs/screenshots/`.
+Kết quả hiện tại (18/10/2026): analyzer sạch, 21 test đạt. Integration Android đạt ở bản 06/10/2026, chưa chạy lại sau khi làm lại giao diện; ảnh trong `docs/screenshots/` vẫn là giao diện cũ. Xem [kết quả xác minh](docs/VERIFICATION.md).
