@@ -273,6 +273,22 @@ class MeshRouter {
   }
 
   String? nodeForPeer(String peerId) => _peerNodes[peerId];
+
+  /// Two phones usually link twice (each one's central role reaches the
+  /// other's peripheral, under different addresses); hello shows both links
+  /// belong to one node, so list each node once with its strongest link.
+  List<Peer> get directPeers {
+    final byNode = <String, Peer>{};
+    for (final p in transport.peers) {
+      final key = _peerNodes[p.id] ?? p.id;
+      final seen = byNode[key];
+      if (seen == null || p.rssi > seen.rssi) {
+        byNode[key] = p;
+      }
+    }
+    return byNode.values.toList();
+  }
+
   Future<void> stop() async {
     running = false;
     await transport.stop();
