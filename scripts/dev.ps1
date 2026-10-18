@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('run', 'test', 'analyze', 'build', 'benchmark')]
+    [ValidateSet('run', 'test', 'analyze', 'build', 'release', 'benchmark')]
     [string]$Action = 'run',
     [string]$Device = ''
 )
@@ -30,6 +30,7 @@ try {
             'test' { & $flutterCommand.Source test }
             'analyze' { & $flutterCommand.Source analyze }
             'build' { & $flutterCommand.Source build apk --debug --target lib/main.dart }
+            'release' { & $flutterCommand.Source build apk --release --target lib/main.dart }
             'benchmark' {
                 $flutterBin = Split-Path -Parent $flutterCommand.Source
                 & (Join-Path $flutterBin 'dart.bat') run tool/benchmark.dart

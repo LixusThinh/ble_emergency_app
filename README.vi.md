@@ -40,12 +40,15 @@ Chọn **Thử mô phỏng 3 thiết bị** để kiểm tra giao diện trên e
 flutter analyze
 flutter test
 flutter build apk --debug
+flutter build apk --release
 dart run tool/simulate.dart 50 6
 dart run tool/simulate.dart 10 6 --no-dedup
 dart run tool/benchmark.dart
 ```
 
-APK build nằm tại `build/app/outputs/flutter-apk/app-debug.apk`; bản APK giao kèm nằm tại `dist/SOS-Mesh-debug.apk`. Đây là bản debug để kiểm thử; release cần signing key riêng.
+APK build nằm tại `build/app/outputs/flutter-apk/app-debug.apk`; bản APK giao kèm nằm tại `dist/SOS-Mesh-debug.apk`. Đây là bản debug để kiểm thử: Dart chạy JIT nên crypto và hiệu ứng chậm hơn.
+
+Bản dùng để quay demo hoặc đo hiệu năng: `flutter build apk --release` (hoặc `.\scripts\dev.ps1 -Action release`), ra `build/app/outputs/flutter-apk/app-release.apk`. Bản này biên dịch AOT. Hiện vẫn ký bằng debug key nên chỉ dùng để cài thử, không phát hành lên cửa hàng. Mọi máy trong một lần thử phải cài cùng một bản build (xem phần tương thích body trong `docs/ARCHITECTURE.md`).
 
 Integration trên Android:
 

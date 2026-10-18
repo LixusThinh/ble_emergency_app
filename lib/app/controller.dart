@@ -17,6 +17,11 @@ class AppController extends ChangeNotifier {
   bool busy = false, demo = false;
   String? error;
   String name = 'Người dùng';
+
+  /// Incoming SOS that arrived after the network started; the UI pops each one.
+  final List<StoredMessage> sosAlerts = [];
+  final Set<String> _known = {};
+  bool _primed = false;
   SimNetwork? _network;
   final List<MeshRouter> _demoRouters = [];
   StreamSubscription<void>? _updates;
@@ -27,6 +32,14 @@ class AppController extends ChangeNotifier {
           final current = router;
           if (current != null) {
             messages = await current.store.messages();
+            for (final m in messages) {
+              if (_known.add(m.packet.messageId) &&
+                  _primed &&
+                  !m.outgoing &&
+                  m.packet.kind == MessageKind.sos) {
+                sosAlerts.add(m);
+              }
+            }
             // Take the router's error once so a dismissed banner stays dismissed.
             error = current.lastError ?? error;
             current.lastError = null;
@@ -38,6 +51,11 @@ class AppController extends ChangeNotifier {
           notifyListeners();
         });
     return _refreshWork;
+  }
+
+  void dismissError() {
+    error = null;
+    notifyListeners();
   }
 
   Future<void> start({required bool simulated}) async {
@@ -87,8 +105,7 @@ class AppController extends ChangeNotifier {
           // Keystore key lost or saved seeds unreadable: start with a new ID
           // instead of leaving BLE unusable.
           identity = await Identity.create();
-          warning =
-              'Không đọc được danh tính đã lưu nên đã tạo ID mới. Thiết bị khác sẽ thấy bạn như một người mới.';
+          warning = 'Không đọc được danh tính đã lưu nên đã tạo ID mới. Thiết bị khác sẽ thấy bạn như một người mới.';
         }
         await AndroidBleTransport.saveIdentity(await identity.export());
         router = MeshRouter(
@@ -103,6 +120,8 @@ class AppController extends ChangeNotifier {
         await router!.start();
       }
       await _refresh();
+      // Messages already stored before this start are history, not alerts.
+      _primed = true;
       error = warning ?? error;
     } catch (e) {
       error = '$e';
@@ -187,6 +206,9 @@ class AppController extends ChangeNotifier {
     }
     _network = null;
     messages = [];
+    _known.clear();
+    _primed = false;
+    sosAlerts.clear();
     notifyListeners();
   }
 }

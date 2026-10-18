@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +8,7 @@ import 'package:ble_emergency_app/messaging/store.dart';
 import 'package:ble_emergency_app/routing/router.dart';
 import 'package:ble_emergency_app/simulator/network.dart';
 import 'package:ble_emergency_app/transport/fragments.dart';
+import 'package:ble_emergency_app/transport/transport.dart';
 
 Future<({SimNetwork network, List<MeshRouter> routers})> fixture({
   int count = 3,
@@ -28,6 +30,31 @@ Future<({SimNetwork network, List<MeshRouter> routers})> fixture({
     }
   });
   return (network: network, routers: routers);
+}
+
+/// Transport whose links and incoming frames the test drives by hand.
+class ManualTransport implements MeshTransport {
+  final links = <String, Peer>{};
+  final sent = <({String to, Uint8List data})>[];
+  final _events = StreamController<TransportEvent>.broadcast();
+  @override
+  Stream<TransportEvent> get events => _events.stream;
+  @override
+  List<Peer> get peers => links.values.toList();
+  @override
+  Future<void> start() async {}
+  @override
+  Future<void> stop() async {}
+  @override
+  Future<void> send(String peerId, Uint8List frame) async =>
+      sent.add((to: peerId, data: frame));
+  void link(String id, {int rssi = -65}) {
+    links[id] = Peer(id, rssi: rssi, mtu: 185);
+    _events.add(PeerConnected(links[id]!));
+  }
+
+  void receive(String from, Uint8List frame) =>
+      _events.add(FrameReceived(from, frame));
 }
 
 void main() {
@@ -119,6 +146,41 @@ void main() {
         (m) => m.packet.messageId == one.messageId,
       ),
       isFalse,
+    );
+  });
+  test('a node two hops away is named from the signed body', () async {
+    final f = await fixture();
+    f.network.connect('0', '1');
+    f.network.connect('1', '2');
+    await f.network.drain(f.routers);
+    final c = await Identity.nodeIdFor(f.routers[2].identity.publicSigning);
+    expect(f.routers[0].contacts.containsKey(hex(c)), isFalse);
+    await f.routers[2].publish(
+      MessageKind.sos,
+      MessageBody('SOS', latitude: 10.2, longitude: 106.4),
+    );
+    await f.network.drain(f.routers);
+    expect(f.routers[0].contacts[hex(c)]?.name, 'Node 2');
+    final m = (await f.routers[0].store.messages()).single;
+    expect((m.text, m.latitude), ('SOS', 10.2));
+  });
+  test('body with location and sender round-trips; truncation fails', () {
+    final b = MessageBody(
+      'Cần giúp',
+      latitude: 1.5,
+      longitude: 2.5,
+      sender: 'Minh • Nhóm 2',
+    ).encode();
+    final d = MessageBody.decode(b);
+    expect(
+      (d.text, d.latitude, d.longitude, d.sender),
+      ('Cần giúp', 1.5, 2.5, 'Minh • Nhóm 2'),
+    );
+    expect(MessageBody.decode(MessageBody('x').encode()).sender, isNull);
+    expect(() => MessageBody.decode(b.sublist(0, 19)), throwsFormatException);
+    expect(
+      () => MessageBody.decode(Uint8List.fromList([4])),
+      throwsFormatException,
     );
   });
   test('triangle dedup terminates flooding and delivers one copy', () async {
@@ -346,5 +408,42 @@ void main() {
     await f.routers[0].publish(MessageKind.chat, MessageBody('chat'));
     await f.routers[0].publish(MessageKind.sos, MessageBody('SOS'));
     expect((await f.routers[0].store.pending()).first.kind, MessageKind.sos);
+  });
+
+  test('two Android links to one phone are listed as one peer', () async {
+    final ta = ManualTransport(), tb = ManualTransport();
+    final a = MeshRouter(
+      identity: await Identity.create(),
+      transport: ta,
+      store: MemoryStore(),
+      name: 'A',
+    );
+    final b = MeshRouter(
+      identity: await Identity.create(),
+      transport: tb,
+      store: MemoryStore(),
+      name: 'B',
+    );
+    await a.start();
+    await b.start();
+    addTearDown(() async {
+      await a.dispose();
+      await b.dispose();
+    });
+    // B's central and peripheral roles reach A under different addresses.
+    ta.link('central', rssi: -70);
+    ta.link('peripheral', rssi: -55);
+    tb.link('a1');
+    tb.link('a2');
+    await Future<void>.delayed(Duration.zero);
+    await b.idle;
+    for (final f in tb.sent) {
+      ta.receive(f.to == 'a1' ? 'central' : 'peripheral', f.data);
+    }
+    await Future<void>.delayed(Duration.zero);
+    await a.idle;
+    expect(a.transport.peers, hasLength(2));
+    expect(a.directPeers.map((p) => p.id), ['peripheral']);
+    expect(a.contacts.values.single.name, 'B');
   });
 }

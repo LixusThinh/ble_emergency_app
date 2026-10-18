@@ -4,6 +4,7 @@ package vn.emergency.ble_emergency_app
 import android.bluetooth.*
 import android.bluetooth.le.*
 import android.content.Context
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelUuid
@@ -120,7 +121,9 @@ class BleEngine private constructor(private val context: Context) {
             else if (valid) { subscribed.remove(device.address); lost(device.address) }
         } }
         override fun onCharacteristicWriteRequest(device: BluetoothDevice, requestId: Int, characteristic: BluetoothGattCharacteristic, preparedWrite: Boolean, responseNeeded: Boolean, offset: Int, value: ByteArray) { handler.post {
-            val valid = running && characteristic.uuid == DATA && !preparedWrite && offset == 0 && value.size <= (mtu["s:${device.address}"] ?: 23) - 3
+            // The ATT layer already bounds a write by the link MTU. When both phones connect to each other they share one link, and
+            // only the side that started the MTU exchange gets onMtuChanged, so mtu["s:…"] can stay at 23 while 517 is in effect.
+            val valid = running && characteristic.uuid == DATA && !preparedWrite && offset == 0 && value.size <= 512
             if (responseNeeded) server?.sendResponse(device, requestId, if (valid) BluetoothGatt.GATT_SUCCESS else BluetoothGatt.GATT_REQUEST_NOT_SUPPORTED, 0, null)
             if (valid) frame(device, value)
         } }
@@ -145,8 +148,13 @@ class BleEngine private constructor(private val context: Context) {
             if (status == BluetoothGatt.GATT_SUCCESS) { connectionTimeouts.remove(gatt.device.address)?.let { handler.removeCallbacks(it) }; clientReady.add(gatt.device.address); peer(gatt.device.address) }
             else closeClient(gatt.device.address)
         } }
+        // Android 13+ hands over the value directly; characteristic.value is shared with outgoing writes on the main thread.
+        override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray) { changed(gatt, characteristic, value.clone()) }
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
-            val bytes = characteristic.value?.clone() ?: return
+            if (Build.VERSION.SDK_INT >= 33) return
+            changed(gatt, characteristic, characteristic.value?.clone() ?: return)
+        }
+        private fun changed(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, bytes: ByteArray) {
             handler.post { if (running && clients[gatt.device.address] === gatt && characteristic.uuid == DATA) frame(gatt.device, bytes) }
         }
         override fun onCharacteristicWrite(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) { handler.post { if (clients[gatt.device.address] === gatt && active?.id == gatt.device.address && active?.notification == false) finish(status == BluetoothGatt.GATT_SUCCESS, "BLE write lỗi $status") } }

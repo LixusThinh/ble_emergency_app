@@ -56,7 +56,9 @@ Transport chỉ biết peer, MTU và frame. Router nhận frame, ghép packet, x
 
 Node ID = 8 byte đầu SHA-256(public signing key). Header và payload được ký, trừ byte hopCount được chuẩn hóa về 0 để relay không cần khóa người gửi. Giới hạn chặng có chữ ký. Relay thiện chí tăng hopCount mỗi lần gửi. Relay độc hại có thể sửa hopCount; đây không phải cơ chế kiểm chứng đường đi.
 
-Body công khai: flag vị trí 1 byte; nếu có, latitude và longitude là hai float64; còn lại UTF-8. Nội dung gửi từ UI tối đa 2000 byte UTF-8. HELLO chứa tên hiển thị trong body. ACK chứa đúng 16 byte ID tin đã nhận.
+Body ứng dụng (SOS, safe, chat; với tin riêng là bản rõ trước khi mã hóa): 1 byte cờ — bit 0 = có vị trí, bit 1 = có tên người gửi, các bit khác phải bằng 0. Nếu có vị trí: latitude và longitude là hai float64. Nếu có tên: 1 byte độ dài rồi tối đa 255 byte UTF-8. Phần còn lại là nội dung UTF-8; nội dung gửi từ UI tối đa 2000 byte UTF-8. HELLO chứa tên hiển thị trong phần nội dung và chỉ đi 1 chặng, nên mỗi tin mang kèm tên người gửi để node cách nhiều chặng vẫn hiện đúng tên. Tên nằm trong phần được ký nhưng chỉ là tên tự khai, không phải danh tính đã xác minh. ACK chứa đúng 16 byte ID tin đã nhận.
+
+Tương thích: bản trước bit 1 chỉ chấp nhận cờ 0 hoặc 1, nên không đọc được tin từ bản hiện tại (vẫn chuyển tiếp vì relay chạy trước khi đọc body). Mọi điện thoại trong một lần thử phải cài cùng một bản build.
 
 Frame có header 12 byte: magic `F`, version, token 4 byte, index uint16, totalFragments uint16, totalLength uint16. Dữ liệu mỗi frame ≤ MTU−3. MTU 23 còn 8 byte dữ liệu sau header frame. Ghép theo peer+token, tối đa 64 assembly, hết hạn sau 30 giây, giới hạn 1024 fragment và 4264 byte/packet. Fragment chưa xác thực riêng; chỉ tin packet sau khi đủ dữ liệu và xác minh chữ ký.
 
