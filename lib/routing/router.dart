@@ -144,7 +144,12 @@ class MeshRouter {
     }
     final p = await _packet(
       kind,
-      body.encode(),
+      MessageBody(
+        body.text,
+        latitude: body.latitude,
+        longitude: body.longitude,
+        sender: name,
+      ).encode(),
       recipient: recipient,
       ttl: ttl,
     );
@@ -209,6 +214,9 @@ class MeshRouter {
           ? await identity.decrypt(p)
           : p.payload;
       final body = MessageBody.decode(clear);
+      if (body.sender != null && body.sender!.trim().isNotEmpty) {
+        contacts[sender] = Contact(sender, body.sender!.trim(), p.exchangeKey);
+      }
       await store.save(
         StoredMessage(
           p,

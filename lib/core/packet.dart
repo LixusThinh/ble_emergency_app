@@ -119,36 +119,70 @@ class Packet {
   );
 }
 
-/// Binary application body: location flag, optional lat/lon doubles, UTF-8 text.
+/// Binary application body: flags, optional lat/lon doubles, optional
+/// length-prefixed sender name, UTF-8 text.
+///
+/// The sender name rides in signed bodies because hello is link-local: without
+/// it, a node two or more hops away would only ever be shown by its ID.
 class MessageBody {
+  static const _location = 1, _sender = 2;
   final String text;
   final double? latitude, longitude;
-  MessageBody(this.text, {this.latitude, this.longitude});
+  final String? sender;
+  MessageBody(this.text, {this.latitude, this.longitude, this.sender});
   Uint8List encode() {
     final location = latitude != null && longitude != null;
     final t = utf8.encode(text);
+    final s = sender == null || sender!.isEmpty ? null : utf8.encode(sender!);
     if (t.length > 2000) {
       throw const FormatException('Tin nhắn tối đa 2000 byte UTF-8');
     }
-    final b = Uint8List(1 + (location ? 16 : 0) + t.length);
-    b[0] = location ? 1 : 0;
-    if (location) {
-      ByteData.sublistView(b).setFloat64(1, latitude!);
-      ByteData.sublistView(b).setFloat64(9, longitude!);
+    if (s != null && s.length > 255) {
+      throw const FormatException('Tên hiển thị tối đa 255 byte UTF-8');
     }
-    b.setRange(location ? 17 : 1, b.length, t);
+    final b = Uint8List(
+      1 + (location ? 16 : 0) + (s == null ? 0 : 1 + s.length) + t.length,
+    );
+    b[0] = (location ? _location : 0) | (s == null ? 0 : _sender);
+    var offset = 1;
+    if (location) {
+      ByteData.sublistView(b)
+        ..setFloat64(1, latitude!)
+        ..setFloat64(9, longitude!);
+      offset = 17;
+    }
+    if (s != null) {
+      b[offset] = s.length;
+      b.setRange(offset + 1, offset + 1 + s.length, s);
+      offset += 1 + s.length;
+    }
+    b.setRange(offset, b.length, t);
     return b;
   }
 
   factory MessageBody.decode(Uint8List b) {
-    if (b.isEmpty || b[0] > 1 || (b[0] == 1 && b.length < 17)) {
+    if (b.isEmpty || b[0] & ~(_location | _sender) != 0) {
       throw const FormatException('Invalid message body');
+    }
+    final location = b[0] & _location != 0;
+    var offset = location ? 17 : 1;
+    if (b.length < offset) {
+      throw const FormatException('Invalid message body');
+    }
+    String? sender;
+    if (b[0] & _sender != 0) {
+      if (b.length < offset + 1 || b.length < offset + 1 + b[offset]) {
+        throw const FormatException('Invalid message body');
+      }
+      sender = utf8.decode(b.sublist(offset + 1, offset + 1 + b[offset]));
+      offset += 1 + b[offset];
     }
     final d = ByteData.sublistView(b);
     return MessageBody(
-      utf8.decode(b.sublist(b[0] == 1 ? 17 : 1)),
-      latitude: b[0] == 1 ? d.getFloat64(1) : null,
-      longitude: b[0] == 1 ? d.getFloat64(9) : null,
+      utf8.decode(b.sublist(offset)),
+      latitude: location ? d.getFloat64(1) : null,
+      longitude: location ? d.getFloat64(9) : null,
+      sender: sender,
     );
   }
 }

@@ -148,6 +148,41 @@ void main() {
       isFalse,
     );
   });
+  test('a node two hops away is named from the signed body', () async {
+    final f = await fixture();
+    f.network.connect('0', '1');
+    f.network.connect('1', '2');
+    await f.network.drain(f.routers);
+    final c = await Identity.nodeIdFor(f.routers[2].identity.publicSigning);
+    expect(f.routers[0].contacts.containsKey(hex(c)), isFalse);
+    await f.routers[2].publish(
+      MessageKind.sos,
+      MessageBody('SOS', latitude: 10.2, longitude: 106.4),
+    );
+    await f.network.drain(f.routers);
+    expect(f.routers[0].contacts[hex(c)]?.name, 'Node 2');
+    final m = (await f.routers[0].store.messages()).single;
+    expect((m.text, m.latitude), ('SOS', 10.2));
+  });
+  test('body with location and sender round-trips; truncation fails', () {
+    final b = MessageBody(
+      'Cần giúp',
+      latitude: 1.5,
+      longitude: 2.5,
+      sender: 'Minh • Nhóm 2',
+    ).encode();
+    final d = MessageBody.decode(b);
+    expect(
+      (d.text, d.latitude, d.longitude, d.sender),
+      ('Cần giúp', 1.5, 2.5, 'Minh • Nhóm 2'),
+    );
+    expect(MessageBody.decode(MessageBody('x').encode()).sender, isNull);
+    expect(() => MessageBody.decode(b.sublist(0, 19)), throwsFormatException);
+    expect(
+      () => MessageBody.decode(Uint8List.fromList([4])),
+      throwsFormatException,
+    );
+  });
   test('triangle dedup terminates flooding and delivers one copy', () async {
     final f = await fixture();
     f.network.connect('0', '1');
