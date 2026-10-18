@@ -99,22 +99,17 @@ void main() {
     await tester.tap(find.text('Thử mô phỏng 3 thiết bị'));
     await waitFor(tester, find.text('Mạng thử nghiệm A → B → C'));
     expect(find.text('Mạng thử nghiệm A → B → C'), findsOneWidget);
+    final sos = find.byKey(const ValueKey('sos-button'));
     for (var i = 0; i < 100; i++) {
       await settle(tester);
-      if (tester
-              .widget<ElevatedButton>(find.byType(ElevatedButton))
-              .onPressed !=
-          null) {
+      if (tester.widget<ElevatedButton>(sos).onPressed != null) {
         break;
       }
     }
-    expect(
-      tester.widget<ElevatedButton>(find.byType(ElevatedButton)).onPressed,
-      isNotNull,
-    );
-    await tester.ensureVisible(find.byIcon(Icons.sos));
+    expect(tester.widget<ElevatedButton>(sos).onPressed, isNotNull);
+    await tester.ensureVisible(sos);
     await settle(tester);
-    await tester.tap(find.byIcon(Icons.sos));
+    await tester.tap(sos);
     await waitFor(tester, find.text('Gửi SOS'));
     await tester.tap(find.text('Gửi SOS'));
     await settle(tester);
