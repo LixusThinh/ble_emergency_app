@@ -2,8 +2,19 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
-String hex(List<int> bytes) =>
-    bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+final _hexDigits = [
+  for (var i = 0; i < 256; i++) i.toRadixString(16).padLeft(2, '0'),
+];
+
+/// Lower-case hex; message and node ids go through this on every packet.
+String hex(List<int> bytes) {
+  final out = StringBuffer();
+  for (final b in bytes) {
+    out.write(_hexDigits[b & 0xff]);
+  }
+  return out.toString();
+}
+
 Uint8List randomBytes(int length) => Uint8List.fromList(
   List.generate(length, (_) => Random.secure().nextInt(256)),
 );
@@ -29,8 +40,10 @@ class Packet {
     required this.payload,
     required this.signature,
   });
-  String get messageId => hex(id);
-  bool get broadcast => recipient.every((b) => b == 0);
+
+  /// Cached: the router keys dedup sets, outboxes and stores by it.
+  late final String messageId = hex(id);
+  late final bool broadcast = recipient.every((b) => b == 0);
   bool get expired =>
       DateTime.now().millisecondsSinceEpoch - timestamp >
       const Duration(hours: 24).inMilliseconds;
