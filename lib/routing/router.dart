@@ -8,14 +8,20 @@ import '../core/packet.dart';
 import '../messaging/store.dart';
 import '../transport/fragments.dart';
 import '../transport/transport.dart';
+import 'flood_guard.dart';
 
 export '../core/contact.dart';
+export 'flood_guard.dart';
 
 class RouterStats {
   int received = 0, relayed = 0, duplicate = 0, rejected = 0, sentFrames = 0;
 
   /// Transmissions that failed; [MeshRouter.resync] offers them again.
   int failedSends = 0;
+
+  /// Packets dropped because their sender was over its budget, and frames
+  /// dropped because their link was muted; see [FloodGuard].
+  int limited = 0, ignoredFrames = 0;
 }
 
 /// Packets waiting for one neighbouring phone: most urgent kind first, in
@@ -70,6 +76,9 @@ class MeshRouter {
   /// Signature check for received packets; a [CryptoWorker] keeps it off the
   /// UI isolate. Defaults to [Identity.verify] on the calling isolate.
   final Future<bool> Function(Packet) verify;
+
+  /// Per-sender budgets and muting of links that send forgeries.
+  final FloodGuard guard;
   final stats = RouterStats();
   final contacts = <String, Contact>{};
   final _updates = StreamController<void>.broadcast();
@@ -108,7 +117,9 @@ class MeshRouter {
     this.retryInterval = const Duration(seconds: 30),
     this.helloTimeout = const Duration(seconds: 5),
     Future<bool> Function(Packet)? verifier,
-  }) : verify = verifier ?? Identity.verify;
+    FloodGuard? guard,
+  }) : verify = verifier ?? Identity.verify,
+       guard = guard ?? FloodGuard();
   Stream<void> get updates => _updates.stream;
 
   /// Completes once received events are handled and outboxes are drained.
@@ -195,6 +206,7 @@ class MeshRouter {
       final link = event.id;
       _links.remove(link);
       _helloWait.remove(link)?.cancel();
+      guard.forget(link);
       final node = _peerNodes.remove(link);
       if (node != null && !_peerNodes.containsValue(node)) {
         // Last link to that phone. It may have lost packets by the time it is
@@ -203,6 +215,11 @@ class MeshRouter {
         _outboxes.remove(node);
       }
     } else if (event is FrameReceived) {
+      if (guard.muted(event.peerId)) {
+        // Sent too many forgeries; not even reassembled.
+        stats.ignoredFrames++;
+        return;
+      }
       final Packet packet;
       try {
         final raw = _assembler.add(event.peerId, event.bytes);
@@ -212,6 +229,7 @@ class MeshRouter {
         packet = Packet.decode(raw);
       } catch (_) {
         stats.rejected++;
+        guard.bad(event.peerId);
         _notify();
         return;
       }
@@ -342,17 +360,31 @@ class MeshRouter {
       _has(_peerNodes[via], p.messageId);
       return;
     }
+    // A clock off by a few hours on a relay can make honest packets look
+    // expired, so these do not count against the link.
     if (p.expired ||
         p.timestamp > DateTime.now().millisecondsSinceEpoch + 300000 ||
-        p.hops < 1 ||
-        !await verify(p)) {
+        p.hops < 1) {
       stats.rejected++;
+      return;
+    }
+    final origin = hex(p.signingKey);
+    // Checked before the 3 ms signature check, but only spent after it, so
+    // forged packets cannot use up a real sender's budget.
+    if (origin != _signer && !guard.allows(origin, p.kind)) {
+      stats.limited++;
+      return;
+    }
+    if (!await verify(p)) {
+      stats.rejected++;
+      guard.bad(via);
       return;
     }
     final sender = hex(await Identity.nodeIdFor(p.signingKey));
     if (sender == identity.id) {
       return;
     }
+    guard.admit(origin, p.kind);
     final previous = contacts[sender];
     var contactName = previous?.name ?? 'Thiết bị ${sender.substring(0, 6)}';
     if (p.kind == MessageKind.hello) {

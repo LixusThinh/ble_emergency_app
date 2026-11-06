@@ -254,6 +254,8 @@ void main() {
         store: MemoryStore(),
         name: 'N$i',
         retryInterval: null,
+        // One phone sends 300 at once here, above the default budget.
+        guard: FloodGuard(burst: 1000),
       );
       await r.start();
       rs.add(r);

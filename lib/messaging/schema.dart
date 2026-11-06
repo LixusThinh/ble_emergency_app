@@ -1,12 +1,15 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+import '../core/packet.dart';
 
 const databaseName = 'emergency_mesh.db';
 
 /// Bump this and add an entry to [_migrations] for every schema change.
 /// Never edit a migration that has shipped: phones upgrade from any version.
-const schemaVersion = 4;
+const schemaVersion = 5;
 
 typedef Migration = Future<void> Function(DatabaseExecutor db);
 
@@ -53,6 +56,29 @@ final Map<int, Migration> _migrations = {
       'ALTER TABLE messages ADD COLUMN rev INTEGER NOT NULL DEFAULT 0',
     );
     await db.execute('CREATE INDEX messages_rev ON messages(rev)');
+  },
+  5: (db) async {
+    // Who signed each packet, so a full table drops from whoever holds the
+    // most rather than from everyone alike; see [keepOrder].
+    await db.execute(
+      "ALTER TABLE packets ADD COLUMN origin TEXT NOT NULL DEFAULT ''",
+    );
+    final batch = db.batch();
+    for (final r in await db.query('packets', columns: ['id', 'bytes'])) {
+      String origin;
+      try {
+        origin = hex(Packet.decode(r['bytes'] as Uint8List).signingKey);
+      } on Object {
+        origin = '';
+      }
+      batch.update(
+        'packets',
+        {'origin': origin},
+        where: 'id = ?',
+        whereArgs: [r['id']],
+      );
+    }
+    await batch.commit(noResult: true);
   },
 };
 

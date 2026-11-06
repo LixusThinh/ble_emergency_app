@@ -7,11 +7,6 @@ import '../core/packet.dart';
 import 'schema.dart';
 import 'store.dart';
 
-/// Rows removed at once when a table is full. Sorting the table to find the
-/// rows to drop is the expensive part, so it is paid once per batch instead
-/// of on every insert.
-const trimBatch = 100;
-
 class SqliteStore implements MessageStore {
   final Database db;
 
@@ -77,9 +72,10 @@ class SqliteStore implements MessageStore {
           );
         }
         if (count >= maxPackets) {
-          // Keep the most useful rows; see [maxPackets] for the order.
+          // Keep the most useful rows, in [keepOrder]: `share` is each
+          // packet's rank among its sender's packets.
           await t.rawDelete(
-            'DELETE FROM packets WHERE id IN (SELECT id FROM packets ORDER BY acked ASC, priority ASC, created DESC LIMIT -1 OFFSET ${maxPackets - trimBatch})',
+            'DELETE FROM packets WHERE id IN (SELECT id FROM (SELECT id, acked, priority, created, ROW_NUMBER() OVER (PARTITION BY origin ORDER BY acked ASC, priority ASC, created DESC) AS share FROM packets) ORDER BY acked ASC, share ASC, priority ASC, created DESC LIMIT -1 OFFSET ${maxPackets - trimBatch})',
           );
           count = await _count(t, 'packets');
         }
@@ -88,6 +84,7 @@ class SqliteStore implements MessageStore {
           'bytes': p.encode(),
           'created': p.timestamp,
           'priority': p.priority,
+          'origin': hex(p.signingKey),
         }, conflictAlgorithm: ConflictAlgorithm.ignore);
         // An ignored duplicate overcounts by one; the next trim recounts.
         _packets = count + 1;

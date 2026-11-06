@@ -61,10 +61,54 @@ const maxMessages = 2000;
 /// Upper bound on remembered contacts; the least recently seen go first.
 const maxContacts = 500;
 
-/// Upper bound on retained packets. When full, settled (ACKed) packets go
-/// first, then the least urgent kind, then the oldest, so a flood of chat
-/// cannot push an SOS out of store-and-forward.
+/// Upper bound on retained packets. When full, packets are dropped in the
+/// reverse of [keepOrder]: settled (ACKed) ones first, then from whichever
+/// sender holds the most, so one sender flooding the mesh pushes out its own
+/// packets and not someone else's SOS.
 const maxPackets = 5000;
+
+/// Rows removed at once when a SQLite table is full. Sorting the table to
+/// find the rows to drop is the expensive part, so it is paid once per batch
+/// instead of on every insert.
+const trimBatch = 100;
+
+/// [packets] from most to least worth keeping, the order both stores trim in:
+/// unsettled before settled, then each sender's share (everyone's best
+/// packet before anyone's second best), then the more urgent kind, then the
+/// newest. A sender's best packet is its most urgent and newest.
+List<Packet> keepOrder(
+  Iterable<Packet> packets,
+  bool Function(Packet) settled,
+) {
+  int byValue(Packet a, Packet b) {
+    final s = (settled(a) ? 1 : 0) - (settled(b) ? 1 : 0);
+    if (s != 0) {
+      return s;
+    }
+    final k = a.priority - b.priority;
+    return k != 0 ? k : b.timestamp - a.timestamp;
+  }
+
+  final bySender = <String, List<Packet>>{};
+  for (final p in packets) {
+    bySender.putIfAbsent(hex(p.signingKey), () => []).add(p);
+  }
+  final share = <String, int>{};
+  for (final list in bySender.values) {
+    list.sort(byValue);
+    for (var i = 0; i < list.length; i++) {
+      share[list[i].messageId] = i;
+    }
+  }
+  return packets.toList()..sort((a, b) {
+    final s = (settled(a) ? 1 : 0) - (settled(b) ? 1 : 0);
+    if (s != 0) {
+      return s;
+    }
+    final r = share[a.messageId]! - share[b.messageId]!;
+    return r != 0 ? r : byValue(a, b);
+  });
+}
 
 class MemoryStore implements MessageStore {
   final Map<String, Packet> _packets = {};
@@ -83,15 +127,11 @@ class MemoryStore implements MessageStore {
     }
     _packets.removeWhere((_, p) => p.expired);
     if (_packets.length >= maxPackets) {
-      // Same order as SqliteStore: acked, then priority, then age.
-      (bool, int, int) rank(Packet v) =>
-          (_acked.contains(v.messageId), v.priority, -v.timestamp);
-      bool before((bool, int, int) a, (bool, int, int) b) =>
-          a.$1 != b.$1 ? a.$1 : (a.$2 != b.$2 ? a.$2 > b.$2 : a.$3 > b.$3);
-      final victim = _packets.values.reduce(
-        (a, b) => before(rank(b), rank(a)) ? b : a,
+      final order = keepOrder(
+        _packets.values,
+        (v) => _acked.contains(v.messageId),
       );
-      _packets.remove(victim.messageId);
+      _packets.remove(order.last.messageId);
     }
     _packets[p.messageId] = p;
   }
