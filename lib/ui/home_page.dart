@@ -9,6 +9,7 @@ import 'chat_tab.dart';
 import 'emergency_tab.dart';
 import 'peers_tab.dart';
 import 'simulator_page.dart';
+import 'sos_dialog.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
@@ -64,6 +65,7 @@ class _HomePageState extends State<HomePage> {
         return;
       }
       if (open ?? false) {
+        recipientId = null;
         _go(1);
       }
       _popSos();
@@ -80,6 +82,8 @@ class _HomePageState extends State<HomePage> {
 
   void _go(int i) {
     FocusScope.of(context).unfocus();
+    // A floating snackbar from another tab would cover the chat composer.
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     setState(() => tab = i);
   }
 
@@ -90,29 +94,45 @@ class _HomePageState extends State<HomePage> {
         listenable: c,
         builder: (context, _) => Column(
           children: [
-            _Header(c: c),
-            if (c.busy) const LinearProgressIndicator(minHeight: 2),
+            _Header(c: c, onStatus: () => _go(2)),
+            AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: c.busy
+                  ? const LinearProgressIndicator(minHeight: 2)
+                  : const SizedBox(height: 2),
+            ),
             if (c.error != null)
               _ErrorBanner(message: c.error!, onClose: c.dismissError),
             Expanded(
-              child: switch (tab) {
-                0 => EmergencyTab(c: c, onSos: _sos, onTab: _go),
-                1 => ChatTab(
-                  c: c,
-                  recipientId: recipientId,
-                  onRecipient: (id) => setState(() => recipientId = id),
-                  input: input,
-                  onSend: _sendChat,
-                ),
-                2 => PeersTab(
-                  c: c,
-                  onMessage: (id) {
-                    recipientId = id;
-                    _go(1);
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 180),
+                switchInCurve: Curves.easeOut,
+                transitionBuilder: (child, animation) =>
+                    FadeTransition(opacity: animation, child: child),
+                child: KeyedSubtree(
+                  key: ValueKey(tab),
+                  child: switch (tab) {
+                    0 => EmergencyTab(c: c, onSos: _sos, onTab: _go),
+                    1 => ChatTab(
+                      c: c,
+                      recipientId: recipientId,
+                      onRecipient: (id) => setState(() => recipientId = id),
+                      input: input,
+                      onSend: _sendChat,
+                      onFindPeers: () => _go(2),
+                    ),
+                    2 => PeersTab(
+                      c: c,
+                      onMessage: (id) {
+                        recipientId = id;
+                        _go(1);
+                      },
+                      onStart: () => _go(0),
+                    ),
+                    _ => const SimulatorPage(),
                   },
                 ),
-                _ => const SimulatorPage(),
-              },
+              ),
             ),
           ],
         ),
@@ -143,73 +163,29 @@ class _HomePageState extends State<HomePage> {
   );
 
   Future<void> _sos() async {
-    const fallback = 'Tôi cần hỗ trợ khẩn cấp.';
-    final detail = TextEditingController(text: fallback);
     final text = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        icon: const Icon(Icons.emergency, color: red, size: 36),
-        title: const Text('Gửi yêu cầu cứu trợ'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'SOS được phát tới mọi thiết bị trong mạng, kèm GPS nếu có. Mô tả ngắn tình trạng của bạn.',
-                style: TextStyle(color: muted, fontSize: 13.5, height: 1.4),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final s in [
-                    'Bị thương',
-                    'Bị mắc kẹt',
-                    'Cần nước uống',
-                    'Cần thuốc',
-                  ])
-                    ActionChip(
-                      label: Text(s),
-                      onPressed: () =>
-                          detail.text = '${detail.text.trim()} $s.'.trim(),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: detail,
-                maxLength: 250,
-                minLines: 2,
-                maxLines: 4,
-              ),
-            ],
+      builder: (_) => const SosDialog(),
+    );
+    if (text == null) {
+      return;
+    }
+    final sent = await c.send(MessageKind.sos, text, gps: true);
+    if (sent && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Đã phát SOS. Tin sẽ tự gửi tiếp khi gặp thiết bị.',
+          ),
+          action: SnackBarAction(
+            label: 'Xem',
+            onPressed: () {
+              recipientId = null;
+              _go(1);
+            },
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Hủy'),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: red,
-              minimumSize: const Size(0, 44),
-            ),
-            onPressed: () => Navigator.pop(
-              context,
-              detail.text.trim().isEmpty ? fallback : detail.text.trim(),
-            ),
-            child: const Text('Gửi SOS'),
-          ),
-        ],
-      ),
-    );
-    // Text controller lives until the dialog transition has completed.
-    Future<void>.delayed(const Duration(seconds: 1), detail.dispose);
-    if (text != null) {
-      await c.send(MessageKind.sos, text, gps: true);
+      );
     }
   }
 
@@ -229,30 +205,30 @@ class _HomePageState extends State<HomePage> {
       text,
       recipient: contact,
     );
-    if (mounted) {
-      FocusScope.of(context).unfocus();
-    }
     if (sent) {
       input.clear();
+      unawaited(HapticFeedback.selectionClick());
     }
   }
 }
 
 class _Header extends StatelessWidget {
   final AppController c;
-  const _Header({required this.c});
+  final VoidCallback onStatus;
+  const _Header({required this.c, required this.onStatus});
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final r = c.router;
     final online = r?.running ?? false;
     final peers = online ? r!.directPeers.length : 0;
     final (label, tint) = !online
-        ? ('Ngoại tuyến', muted)
+        ? ('Ngoại tuyến', p.muted)
         : c.demo
-        ? ('Mô phỏng', amber)
+        ? ('Mô phỏng', p.warn)
         : peers == 0
-        ? ('Đang tìm…', teal)
-        : ('$peers thiết bị', teal);
+        ? ('Đang tìm…', p.accent)
+        : ('$peers thiết bị', p.accent);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
       child: Row(
@@ -286,37 +262,51 @@ class _Header extends StatelessWidget {
                 ),
                 Text(
                   online
-                      ? 'ID ${r!.identity.id.substring(0, 8)}'
+                      ? '${r!.name} • ID ${r.identity.id.substring(0, 8)}'
                       : 'Nhắn tin không cần Internet',
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12, color: muted),
+                  style: TextStyle(fontSize: 12, color: p.muted),
                 ),
               ],
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-            decoration: BoxDecoration(
-              color: online ? tint.withValues(alpha: .1) : Colors.white,
-              border: Border.all(
-                color: online ? tint.withValues(alpha: .25) : line,
+          Semantics(
+            button: true,
+            label: 'Trạng thái mạng: $label. Mở danh sách thiết bị',
+            excludeSemantics: true,
+            onTap: onStatus,
+            child: Material(
+              color: online ? tint.withValues(alpha: .1) : p.surface,
+              shape: StadiumBorder(
+                side: BorderSide(
+                  color: online ? tint.withValues(alpha: .25) : p.line,
+                ),
               ),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                PulseDot(color: tint, active: online),
-                const SizedBox(width: 6),
-                Text(
-                  label,
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12.5,
-                    color: tint,
+              child: InkWell(
+                customBorder: const StadiumBorder(),
+                onTap: onStatus,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 9,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      PulseDot(color: tint, active: online),
+                      const SizedBox(width: 6),
+                      Text(
+                        label,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12.5,
+                          color: tint,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
           ),
         ],
@@ -330,28 +320,34 @@ class _ErrorBanner extends StatelessWidget {
   final VoidCallback onClose;
   const _ErrorBanner({required this.message, required this.onClose});
   @override
-  Widget build(BuildContext context) => Container(
-    margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-    padding: const EdgeInsets.fromLTRB(14, 6, 4, 6),
-    decoration: BoxDecoration(
-      color: amberSoft,
-      borderRadius: BorderRadius.circular(14),
-      border: Border.all(color: amber.withValues(alpha: .25)),
-    ),
-    child: Row(
-      children: [
-        const Icon(Icons.info_outline, color: amber, size: 20),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            message,
-            maxLines: 4,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 13),
-          ),
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        padding: const EdgeInsets.fromLTRB(14, 6, 4, 6),
+        decoration: BoxDecoration(
+          color: p.warnSoft,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: p.warn.withValues(alpha: .25)),
         ),
-        TextButton(onPressed: onClose, child: const Text('Đóng')),
-      ],
-    ),
-  );
+        child: Row(
+          children: [
+            Icon(Icons.info_outline, color: p.warn, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 13),
+              ),
+            ),
+            TextButton(onPressed: onClose, child: const Text('Đóng')),
+          ],
+        ),
+      ),
+    );
+  }
 }

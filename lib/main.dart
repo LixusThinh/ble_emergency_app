@@ -15,6 +15,7 @@ class EmergencyApp extends StatelessWidget {
     title: 'SOS Mesh',
     debugShowCheckedModeBanner: false,
     theme: buildTheme(),
+    darkTheme: buildTheme(Brightness.dark),
     home: const HomePage(),
   );
 }

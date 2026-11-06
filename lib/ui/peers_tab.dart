@@ -10,9 +10,16 @@ import 'widgets.dart';
 class PeersTab extends StatelessWidget {
   final AppController c;
   final ValueChanged<String> onMessage;
-  const PeersTab({super.key, required this.c, required this.onMessage});
+  final VoidCallback onStart;
+  const PeersTab({
+    super.key,
+    required this.c,
+    required this.onMessage,
+    required this.onStart,
+  });
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final r = c.router;
     final online = r?.running ?? false;
     return ListView(
@@ -23,27 +30,33 @@ class PeersTab extends StatelessWidget {
           subtitle: 'RSSI cho biết tín hiệu mạnh hay yếu, không phải khoảng cách chính xác.',
         ),
         if (!online || r == null)
-          const Card(
+          Card(
             child: EmptyState(
               icon: Icons.bluetooth_disabled,
               title: 'Mạng đang tắt',
               detail: 'Bật mạng trong tab Khẩn cấp để tìm thiết bị.',
+              action: FilledButton.tonalIcon(
+                onPressed: onStart,
+                icon: const Icon(Icons.bluetooth),
+                label: const Text('Đến tab Khẩn cấp'),
+              ),
             ),
           )
         else
           ..._online(context, r),
         const SizedBox(height: 14),
-        const Text(
+        Text(
           'Chữ ký xác nhận nguồn phát theo khóa, không xác nhận danh tính ngoài đời. Tên hiển thị có thể trùng.',
-          style: TextStyle(color: muted, fontSize: 12, height: 1.5),
+          style: TextStyle(color: p.muted, fontSize: 12, height: 1.5),
         ),
       ],
     );
   }
 
   List<Widget> _online(BuildContext context, MeshRouter r) {
+    final p = context.palette;
     final direct = r.directPeers;
-    final directNodes = {for (final p in direct) r.nodeForPeer(p.id)};
+    final directNodes = {for (final peer in direct) r.nodeForPeer(peer.id)};
     return [
       Card(
         child: Padding(
@@ -67,7 +80,7 @@ class PeersTab extends StatelessWidget {
                       c.demo
                           ? 'Thiết bị của bạn • mô phỏng'
                           : 'Thiết bị của bạn',
-                      style: const TextStyle(color: muted, fontSize: 12),
+                      style: TextStyle(color: p.muted, fontSize: 12),
                     ),
                     const SizedBox(height: 4),
                     SelectableText(
@@ -109,43 +122,45 @@ class PeersTab extends StatelessWidget {
             subtitle: Text('Mở ứng dụng và bật mạng trên điện thoại khác.'),
           ),
         ),
-      for (final p in direct)
+      for (final peer in direct)
         Card(
           child: ListTile(
-            leading: _SignalBadge(p),
+            leading: _SignalBadge(peer),
             title: Text(
-              r.contacts[r.nodeForPeer(p.id)]?.name ?? p.id,
+              r.contacts[r.nodeForPeer(peer.id)]?.name ?? peer.id,
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
-            subtitle: Text('${p.rssi} dBm • ${p.signal} • MTU ${p.mtu}'),
-            trailing: const Icon(Icons.link, color: teal),
+            subtitle: Text(
+              '${peer.rssi} dBm • ${peer.signal} • MTU ${peer.mtu}',
+            ),
+            trailing: Icon(Icons.link, color: p.accent),
           ),
         ),
       SectionTitle('Danh tính đã gặp', trailing: CountBadge(r.contacts.length)),
       if (r.contacts.isEmpty)
-        const Padding(
-          padding: EdgeInsets.all(8),
+        Padding(
+          padding: const EdgeInsets.all(8),
           child: Text(
             'Chưa nhận được gói tin có chữ ký nào.',
-            style: TextStyle(color: muted),
+            style: TextStyle(color: p.muted),
           ),
         ),
-      for (final p in r.contacts.values)
+      for (final contact in r.contacts.values)
         Card(
           child: ListTile(
-            leading: Avatar(id: p.id, name: p.name),
+            leading: Avatar(id: contact.id, name: contact.name),
             title: Text(
-              p.name,
+              contact.name,
               style: const TextStyle(fontWeight: FontWeight.w700),
             ),
             subtitle: Text(
-              '${p.id.substring(0, 8)}…${directNodes.contains(p.id) ? '  •  đang kết nối trực tiếp' : ''}',
+              '${contact.id.substring(0, 8)}…${directNodes.contains(contact.id) ? '  •  đang kết nối trực tiếp' : ''}',
               style: const TextStyle(fontSize: 12),
             ),
             trailing: IconButton(
               tooltip: 'Nhắn riêng',
-              onPressed: () => onMessage(p.id),
-              icon: const Icon(Icons.lock_outline, color: teal),
+              onPressed: () => onMessage(contact.id),
+              icon: Icon(Icons.lock_outline, color: p.accent),
             ),
           ),
         ),
@@ -158,19 +173,23 @@ class _SignalBadge extends StatelessWidget {
   const _SignalBadge(this.peer);
   @override
   Widget build(BuildContext context) {
-    final (icon, tint) = peer.rssi > -60
-        ? (Icons.signal_cellular_alt, teal)
+    final p = context.palette;
+    final (icon, tint, label) = peer.rssi > -60
+        ? (Icons.signal_cellular_alt, p.accent, 'mạnh')
         : peer.rssi > -80
-        ? (Icons.signal_cellular_alt_2_bar, amber)
-        : (Icons.signal_cellular_alt_1_bar, red);
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        color: tint.withValues(alpha: .12),
-        borderRadius: BorderRadius.circular(14),
+        ? (Icons.signal_cellular_alt_2_bar, p.warn, 'trung bình')
+        : (Icons.signal_cellular_alt_1_bar, p.danger, 'yếu');
+    return Semantics(
+      label: 'Tín hiệu $label',
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: tint.withValues(alpha: .12),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Icon(icon, color: tint),
       ),
-      child: Icon(icon, color: tint),
     );
   }
 }

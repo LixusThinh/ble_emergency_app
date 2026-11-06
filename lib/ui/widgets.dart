@@ -6,9 +6,29 @@ import '../core/packet.dart';
 import '../messaging/store.dart';
 import 'theme.dart';
 
+String _two(int v) => v.toString().padLeft(2, '0');
+
 String clock(int timestamp) {
   final t = DateTime.fromMillisecondsSinceEpoch(timestamp).toLocal();
-  return '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+  return '${_two(t.hour)}:${_two(t.minute)}';
+}
+
+/// Calendar day of [timestamp] in local time, for grouping messages.
+DateTime dayOf(int timestamp) {
+  final t = DateTime.fromMillisecondsSinceEpoch(timestamp).toLocal();
+  return DateTime(t.year, t.month, t.day);
+}
+
+String dayLabel(DateTime day, {DateTime? now}) {
+  final today = dayOf((now ?? DateTime.now()).millisecondsSinceEpoch);
+  final diff = today.difference(day).inDays;
+  if (diff == 0) {
+    return 'Hôm nay';
+  }
+  if (diff == 1) {
+    return 'Hôm qua';
+  }
+  return '${_two(day.day)}/${_two(day.month)}/${day.year}';
 }
 
 String senderName(AppController c, StoredMessage m) => m.outgoing
@@ -16,7 +36,21 @@ String senderName(AppController c, StoredMessage m) => m.outgoing
     : c.router?.contacts[m.senderId]?.name ??
           'Thiết bị ${m.senderId.substring(0, 6)}';
 
-const _palette = [
+/// Whether [m] belongs to the conversation with [contactId]; null is the
+/// public channel (SOS, safe reports and broadcast chat).
+bool inConversation(StoredMessage m, String? contactId) {
+  if (contactId == null) {
+    return m.packet.broadcast;
+  }
+  if (m.packet.kind != MessageKind.privateChat) {
+    return false;
+  }
+  return m.outgoing
+      ? hex(m.packet.recipient) == contactId
+      : m.senderId == contactId;
+}
+
+const _avatarPalette = [
   Color(0xff0a7c7e),
   Color(0xff3b5bdb),
   Color(0xffc2410c),
@@ -26,8 +60,12 @@ const _palette = [
 ];
 
 /// Stable per-node colour so the same sender looks the same on every screen.
-Color colorFor(String id) =>
-    _palette[id.codeUnits.fold(0, (a, b) => a + b) % _palette.length];
+Color colorFor(String id, [Brightness brightness = Brightness.light]) {
+  final c =
+      _avatarPalette[id.codeUnits.fold(0, (a, b) => a + b) %
+          _avatarPalette.length];
+  return brightness == Brightness.dark ? Color.lerp(c, Colors.white, .35)! : c;
+}
 
 String initials(String name) {
   final letters = name
@@ -50,18 +88,23 @@ class Avatar extends StatelessWidget {
     this.size = 40,
   });
   @override
-  Widget build(BuildContext context) => CircleAvatar(
-    radius: size / 2,
-    backgroundColor: colorFor(id).withValues(alpha: .14),
-    child: Text(
-      initials(name),
-      style: TextStyle(
-        color: colorFor(id),
-        fontWeight: FontWeight.w800,
-        fontSize: size * .36,
+  Widget build(BuildContext context) {
+    final tint = colorFor(id, Theme.of(context).brightness);
+    return ExcludeSemantics(
+      child: CircleAvatar(
+        radius: size / 2,
+        backgroundColor: tint.withValues(alpha: .16),
+        child: Text(
+          initials(name),
+          style: TextStyle(
+            color: tint,
+            fontWeight: FontWeight.w800,
+            fontSize: size * .36,
+          ),
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class PageTitle extends StatelessWidget {
@@ -78,11 +121,14 @@ class PageTitle extends StatelessWidget {
         Row(
           children: [
             Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
+              child: Semantics(
+                header: true,
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
             ),
@@ -94,7 +140,11 @@ class PageTitle extends StatelessWidget {
             padding: const EdgeInsets.only(top: 4),
             child: Text(
               subtitle!,
-              style: const TextStyle(color: muted, fontSize: 13, height: 1.45),
+              style: TextStyle(
+                color: context.palette.muted,
+                fontSize: 13,
+                height: 1.45,
+              ),
             ),
           ),
       ],
@@ -112,9 +162,12 @@ class SectionTitle extends StatelessWidget {
     child: Row(
       children: [
         Expanded(
-          child: Text(
-            text,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+          child: Semantics(
+            header: true,
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+            ),
           ),
         ),
         ?trailing,
@@ -127,17 +180,20 @@ class CountBadge extends StatelessWidget {
   final int count;
   const CountBadge(this.count, {super.key});
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-    decoration: BoxDecoration(
-      color: tealSoft,
-      borderRadius: BorderRadius.circular(999),
-    ),
-    child: Text(
-      '$count',
-      style: const TextStyle(color: teal, fontWeight: FontWeight.w800),
-    ),
-  );
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      decoration: BoxDecoration(
+        color: p.accentSoft,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        '$count',
+        style: TextStyle(color: p.accent, fontWeight: FontWeight.w800),
+      ),
+    );
+  }
 }
 
 class StatTile extends StatelessWidget {
@@ -150,74 +206,115 @@ class StatTile extends StatelessWidget {
     required this.icon,
   });
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(12),
-    decoration: BoxDecoration(
-      color: canvas,
-      borderRadius: BorderRadius.circular(14),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(icon, size: 18, color: teal),
-        const SizedBox(height: 8),
-        Text(
-          value,
-          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return MergeSemantics(
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: p.canvas,
+          borderRadius: BorderRadius.circular(14),
         ),
-        Text(
-          label,
-          maxLines: 2,
-          style: const TextStyle(fontSize: 11.5, color: muted, height: 1.25),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 18, color: p.accent),
+            const SizedBox(height: 8),
+            Text(
+              value,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+            ),
+            Text(
+              label,
+              maxLines: 2,
+              style: TextStyle(fontSize: 11.5, color: p.muted, height: 1.25),
+            ),
+          ],
         ),
-      ],
-    ),
-  );
+      ),
+    );
+  }
 }
 
 class EmptyState extends StatelessWidget {
   final IconData icon;
   final String title;
   final String? detail;
+  final Widget? action;
   const EmptyState({
     super.key,
     required this.icon,
     required this.title,
     this.detail,
+    this.action,
   });
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.all(24),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 64,
-          height: 64,
-          decoration: const BoxDecoration(
-            color: tealSoft,
-            shape: BoxShape.circle,
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              color: p.accentSoft,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: p.accent, size: 30),
           ),
-          child: Icon(icon, color: teal, size: 30),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          title,
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontWeight: FontWeight.w700),
-        ),
-        if (detail != null)
+          const SizedBox(height: 12),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          if (detail != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                detail!,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: p.muted, fontSize: 12.5, height: 1.4),
+              ),
+            ),
+          if (action != null) ...[const SizedBox(height: 14), action!],
+        ],
+      ),
+    );
+  }
+}
+
+/// Thin label between messages from different days.
+class DaySeparator extends StatelessWidget {
+  final DateTime day;
+  const DaySeparator(this.day, {super.key});
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          Expanded(child: Divider(color: p.line)),
           Padding(
-            padding: const EdgeInsets.only(top: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 10),
             child: Text(
-              detail!,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: muted, fontSize: 12.5, height: 1.4),
+              dayLabel(day),
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                color: p.muted,
+              ),
             ),
           ),
-      ],
-    ),
-  );
+          Expanded(child: Divider(color: p.line)),
+        ],
+      ),
+    );
+  }
 }
 
 /// Small status dot; a ring pulses out of it while [active].
@@ -324,7 +421,13 @@ class _SosButtonState extends State<SosButton>
   }
 
   void _sync() {
-    if (_on) {
+    // Respect the system "remove animations" setting; the button stays usable.
+    final still = WidgetsBinding
+        .instance
+        .platformDispatcher
+        .accessibilityFeatures
+        .disableAnimations;
+    if (_on && !still) {
       if (!_ripple.isAnimating) {
         _ripple.repeat();
       }
@@ -342,80 +445,86 @@ class _SosButtonState extends State<SosButton>
   }
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    button: true,
-    label: 'Gửi tín hiệu SOS',
-    child: SizedBox(
-      width: 236,
-      height: 236,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          if (_on)
-            for (final shift in [0.0, .5])
-              AnimatedBuilder(
-                animation: _ripple,
-                builder: (_, _) {
-                  final t = (_ripple.value + shift) % 1;
-                  return Container(
-                    width: 168 + 68 * t,
-                    height: 168 + 68 * t,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: red.withValues(alpha: .16 * (1 - t)),
-                    ),
-                  );
-                },
-              ),
-          Container(
-            width: 168,
-            height: 168,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              boxShadow: _on
-                  ? [
-                      BoxShadow(
-                        color: red.withValues(alpha: .28),
-                        blurRadius: 28,
-                        spreadRadius: 2,
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return Semantics(
+      button: true,
+      enabled: _on,
+      label: _on ? 'Gửi tín hiệu SOS' : 'SOS, cần bật mạng trước',
+      excludeSemantics: true,
+      onTap: widget.onPressed,
+      child: SizedBox(
+        width: 236,
+        height: 236,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            if (_on)
+              for (final shift in [0.0, .5])
+                AnimatedBuilder(
+                  animation: _ripple,
+                  builder: (_, _) {
+                    final t = (_ripple.value + shift) % 1;
+                    return Container(
+                      width: 168 + 68 * t,
+                      height: 168 + 68 * t,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: red.withValues(alpha: .16 * (1 - t)),
                       ),
-                    ]
-                  : null,
-            ),
-            child: ElevatedButton(
-              key: const ValueKey('sos-button'),
-              onPressed: widget.onPressed,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: red,
-                foregroundColor: Colors.white,
-                disabledBackgroundColor: const Color(0xffe6ecec),
-                disabledForegroundColor: muted,
-                elevation: 0,
-                padding: EdgeInsets.zero,
-                shape: CircleBorder(
-                  side: BorderSide(color: _on ? Colors.white : line, width: 5),
+                    );
+                  },
+                ),
+            Container(
+              width: 168,
+              height: 168,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: _on
+                    ? [
+                        BoxShadow(
+                          color: red.withValues(alpha: .28),
+                          blurRadius: 28,
+                          spreadRadius: 2,
+                        ),
+                      ]
+                    : null,
+              ),
+              child: ElevatedButton(
+                key: const ValueKey('sos-button'),
+                onPressed: widget.onPressed,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: red,
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: p.line,
+                  disabledForegroundColor: p.muted,
+                  elevation: 0,
+                  padding: EdgeInsets.zero,
+                  shape: CircleBorder(
+                    side: BorderSide(color: _on ? p.surface : p.line, width: 5),
+                  ),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.sos, size: 64),
+                    Text(
+                      _on ? 'GỬI CỨU TRỢ' : 'CHƯA BẬT MẠNG',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.sos, size: 64),
-                  Text(
-                    _on ? 'GỬI CỨU TRỢ' : 'CHƯA BẬT MẠNG',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.2,
-                    ),
-                  ),
-                ],
-              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class GpsRow extends StatelessWidget {
@@ -423,17 +532,18 @@ class GpsRow extends StatelessWidget {
   const GpsRow(this.m, {super.key});
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final coords =
         '${m.latitude!.toStringAsFixed(6)}, ${m.longitude!.toStringAsFixed(6)}';
     return Container(
       padding: const EdgeInsets.fromLTRB(10, 2, 2, 2),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: p.surface,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
         children: [
-          const Icon(Icons.place, color: red, size: 18),
+          Icon(Icons.place, color: p.danger, size: 18),
           const SizedBox(width: 6),
           Expanded(
             child: SelectableText(
@@ -494,14 +604,15 @@ class MessageBubble extends StatelessWidget {
   const MessageBubble({super.key, required this.c, required this.m});
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final name = senderName(c, m), kind = m.packet.kind;
     if (kind == MessageKind.sos || kind == MessageKind.safe) {
-      final sos = kind == MessageKind.sos, tint = sos ? red : teal;
+      final sos = kind == MessageKind.sos, tint = sos ? p.danger : p.accent;
       return Container(
         margin: const EdgeInsets.symmetric(vertical: 5),
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: sos ? redSoft : tealSoft,
+          color: sos ? p.dangerSoft : p.accentSoft,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(color: tint.withValues(alpha: .25)),
         ),
@@ -516,7 +627,7 @@ class MessageBubble extends StatelessWidget {
                     vertical: 3,
                   ),
                   decoration: BoxDecoration(
-                    color: tint,
+                    color: sos ? red : teal,
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
@@ -539,7 +650,7 @@ class MessageBubble extends StatelessWidget {
                 ),
                 Text(
                   clock(m.packet.timestamp),
-                  style: const TextStyle(fontSize: 11, color: muted),
+                  style: TextStyle(fontSize: 11, color: p.muted),
                 ),
               ],
             ),
@@ -559,7 +670,7 @@ class MessageBubble extends StatelessWidget {
         ),
       );
     }
-    final out = m.outgoing, meta = out ? Colors.white70 : muted;
+    final out = m.outgoing, meta = out ? Colors.white70 : p.muted;
     return Align(
       alignment: out ? Alignment.centerRight : Alignment.centerLeft,
       child: ConstrainedBox(
@@ -570,8 +681,8 @@ class MessageBubble extends StatelessWidget {
           margin: const EdgeInsets.symmetric(vertical: 4),
           padding: const EdgeInsets.fromLTRB(14, 10, 14, 8),
           decoration: BoxDecoration(
-            color: out ? teal : Colors.white,
-            border: out ? null : Border.all(color: line),
+            color: out ? p.bubbleOut : p.surface,
+            border: out ? null : Border.all(color: p.line),
             borderRadius: BorderRadius.only(
               topLeft: const Radius.circular(18),
               topRight: const Radius.circular(18),
@@ -588,7 +699,7 @@ class MessageBubble extends StatelessWidget {
                   child: Text(
                     name,
                     style: TextStyle(
-                      color: colorFor(m.senderId),
+                      color: colorFor(m.senderId, Theme.of(context).brightness),
                       fontWeight: FontWeight.w800,
                       fontSize: 13,
                     ),
@@ -599,7 +710,7 @@ class MessageBubble extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 15,
                   height: 1.35,
-                  color: out ? Colors.white : ink,
+                  color: out ? Colors.white : p.ink,
                 ),
               ),
               const SizedBox(height: 6),
@@ -639,11 +750,12 @@ class MessageTile extends StatelessWidget {
   });
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final (icon, tint) = switch (m.packet.kind) {
-      MessageKind.sos => (Icons.campaign_rounded, red),
-      MessageKind.safe => (Icons.verified_user_outlined, teal),
-      MessageKind.privateChat => (Icons.lock_outline, const Color(0xff3b5bdb)),
-      _ => (Icons.chat_bubble_outline, teal),
+      MessageKind.sos => (Icons.campaign_rounded, p.danger),
+      MessageKind.safe => (Icons.verified_user_outlined, p.accent),
+      MessageKind.privateChat => (Icons.lock_outline, p.info),
+      _ => (Icons.chat_bubble_outline, p.accent),
     };
     return Card(
       child: ListTile(
@@ -662,7 +774,7 @@ class MessageTile extends StatelessWidget {
         subtitle: Text(m.text, maxLines: 1, overflow: TextOverflow.ellipsis),
         trailing: Text(
           clock(m.packet.timestamp),
-          style: const TextStyle(fontSize: 11, color: muted),
+          style: TextStyle(fontSize: 11, color: p.muted),
         ),
       ),
     );
@@ -689,13 +801,16 @@ class SosAlert extends StatelessWidget {
             children: [
               const Icon(Icons.campaign_rounded, color: Colors.white, size: 40),
               const SizedBox(height: 6),
-              const Text(
-                'TÍN HIỆU SOS',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 2,
-                  fontSize: 16,
+              Semantics(
+                liveRegion: true,
+                child: const Text(
+                  'TÍN HIỆU SOS',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 2,
+                    fontSize: 16,
+                  ),
                 ),
               ),
               Text(
@@ -705,53 +820,56 @@ class SosAlert extends StatelessWidget {
             ],
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                name,
-                style: const TextStyle(
-                  fontSize: 19,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(m.text, style: const TextStyle(fontSize: 15, height: 1.4)),
-              if (m.latitude != null) ...[
-                const SizedBox(height: 12),
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: line),
-                    borderRadius: BorderRadius.circular(12),
+        Flexible(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: const TextStyle(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w800,
                   ),
-                  child: GpsRow(m),
                 ),
-              ],
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: const Text('Đóng'),
+                const SizedBox(height: 6),
+                Text(m.text, style: const TextStyle(fontSize: 15, height: 1.4)),
+                if (m.latitude != null) ...[
+                  const SizedBox(height: 12),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: context.palette.line),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: FilledButton(
-                      style: FilledButton.styleFrom(
-                        backgroundColor: red,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                      ),
-                      onPressed: () => Navigator.pop(context, true),
-                      child: const Text('Xem tin nhắn'),
-                    ),
+                    child: GpsRow(m),
                   ),
                 ],
-              ),
-            ],
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(context, false),
+                        child: const Text('Đóng'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: red,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                        ),
+                        onPressed: () => Navigator.pop(context, true),
+                        child: const Text('Xem tin nhắn'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
       ],

@@ -78,13 +78,17 @@ class _SimulatorPageState extends State<SimulatorPage> {
       if (error != null)
         Padding(
           padding: const EdgeInsets.all(8),
-          child: Text(error!, style: const TextStyle(color: red)),
+          child: Text(error!, style: TextStyle(color: context.palette.danger)),
         ),
       if (report != null) ...[const SizedBox(height: 6), _Result(report!)],
       const SizedBox(height: 14),
-      const Text(
+      Text(
         'Kết quả mô phỏng không đo độ trễ vô tuyến, tầm phủ hoặc pin. Các số đo này cần 3–5 điện thoại thật.',
-        style: TextStyle(fontSize: 12, color: muted, height: 1.5),
+        style: TextStyle(
+          fontSize: 12,
+          color: context.palette.muted,
+          height: 1.5,
+        ),
       ),
     ],
   );
@@ -132,7 +136,7 @@ class _SliderRow extends StatelessWidget {
     children: [
       Row(
         children: [
-          Icon(icon, size: 18, color: teal),
+          Icon(icon, size: 18, color: context.palette.accent),
           const SizedBox(width: 8),
           Text(
             label,
@@ -155,28 +159,31 @@ class _Tag extends StatelessWidget {
   final String text;
   const _Tag(this.text);
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-    decoration: BoxDecoration(
-      color: tealSoft,
-      borderRadius: BorderRadius.circular(999),
-    ),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Icon(Icons.check, size: 14, color: teal),
-        const SizedBox(width: 4),
-        Text(
-          text,
-          style: const TextStyle(
-            color: teal,
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: p.accentSoft,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.check, size: 14, color: p.accent),
+          const SizedBox(width: 4),
+          Text(
+            text,
+            style: TextStyle(
+              color: p.accent,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
           ),
-        ),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
 }
 
 class _Result extends StatelessWidget {
@@ -184,6 +191,7 @@ class _Result extends StatelessWidget {
   const _Result(this.report);
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final others = report.nodes - 1;
     return Card(
       child: Padding(
@@ -191,11 +199,11 @@ class _Result extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Text(
               'TỶ LỆ NHẬN SOS',
               style: TextStyle(
                 letterSpacing: 1.2,
-                color: teal,
+                color: p.accent,
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
               ),
@@ -217,7 +225,7 @@ class _Result extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Text(
                     '${report.delivered}/$others thiết bị nhận',
-                    style: const TextStyle(color: muted),
+                    style: TextStyle(color: p.muted),
                   ),
                 ),
               ],
@@ -227,7 +235,7 @@ class _Result extends StatelessWidget {
               value: report.ratio,
               minHeight: 8,
               borderRadius: BorderRadius.circular(4),
-              backgroundColor: tealSoft,
+              backgroundColor: p.accentSoft,
             ),
             const SizedBox(height: 16),
             GridView.count(
@@ -236,7 +244,7 @@ class _Result extends StatelessWidget {
               physics: const NeverScrollableScrollPhysics(),
               mainAxisSpacing: 8,
               crossAxisSpacing: 8,
-              childAspectRatio: 1.9,
+              childAspectRatio: 1.6,
               children: [
                 StatTile(
                   value: '${report.frames}',
@@ -283,7 +291,7 @@ class _Result extends StatelessWidget {
                         value: e.value / others,
                         minHeight: 10,
                         borderRadius: BorderRadius.circular(5),
-                        backgroundColor: canvas,
+                        backgroundColor: p.canvas,
                       ),
                     ),
                     SizedBox(
