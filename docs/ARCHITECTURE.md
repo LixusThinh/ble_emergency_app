@@ -24,6 +24,24 @@ Transport chỉ biết peer, MTU và frame. Router nhận frame, ghép packet, x
 
 Đánh giá nhiều node từ UI chạy trong Dart isolate riêng để chữ ký/mô phỏng không chặn luồng render. Emulator debug có thể xử lý crypto chậm; script CLI thuận tiện hơn cho benchmark 50–100 node.
 
+## Lưu trữ SQLite (schema v2)
+
+File `emergency_mesh.db` trong sandbox ứng dụng. Mã: `lib/messaging/schema.dart` (schema + migration), `sqlite_store.dart` (tin, gói, danh bạ), `settings_store.dart` (cài đặt).
+
+| Bảng | Nội dung | Giới hạn |
+|---|---|---|
+| `packets` | Gói đã xác minh: chống trùng và hàng chờ store-and-forward; `acked` = đã có ACK hợp lệ | 24 giờ, tối đa 5000 |
+| `messages` | Inbox/outbox đã giải mã hiển thị trên UI | 2000 tin mới nhất |
+| `contacts` (v2) | Node đã gặp: ID, tên tự khai, khóa trao đổi công khai, lần cuối thấy | 500 node gần nhất |
+| `settings` (v2) | Cặp khóa/giá trị: `display_name`, `theme_mode` | — |
+
+Index: `packets(created)`, `packets(acked, priority, created)` cho `pending()`, `messages(created)` cho danh sách tin, `contacts(last_seen)`.
+
+- **Migration:** mỗi phiên bản là một bước trong `_migrations`; cài mới chạy từ bước 1, nâng cấp chạy các bước còn thiếu trong một transaction. Không sửa bước đã phát hành, chỉ thêm bước mới và tăng `schemaVersion`. Hạ phiên bản (cài APK cũ đè lên) không được hỗ trợ.
+- **Kết nối:** WAL và `busy_timeout` 3 giây. Cài đặt dùng một kết nối riêng mở suốt vòng đời app; kho tin mở khi bật mạng và đóng khi tắt mạng, nên đóng kho tin không làm mất cài đặt.
+- **Danh bạ:** router nạp danh bạ khi khởi động, nên tên người gửi và nhắn riêng dùng được ngay sau khi mở lại app, trước khi gặp lại máy kia. Router ghi khi gặp node mới, khi tên hoặc khóa thay đổi, hoặc khi lần ghi trước đã quá 1 phút.
+- Mất file cài đặt hoặc lỗi mở database lúc khởi động không chặn app: cài đặt chuyển sang bộ nhớ tạm và chỉ không được lưu.
+
 ## BLE Android
 
 - Service UUID: `a8c10001-37d5-4b52-9c40-9ad6819b3000`.
@@ -86,7 +104,7 @@ Thuật toán giữ bản nhận đầu tiên, nên tuyến dài đến trước
 - Seeds danh tính được mã hóa AES-GCM bằng khóa Android Keystore, lưu ciphertext trong SharedPreferences, tắt backup.
 - Tên hiển thị không chứng minh danh tính. So sánh ID qua kênh đáng tin trước khi gửi tin nhạy cảm. Không có danh bạ được xác minh trước hoặc chứng chỉ cơ quan cứu hộ.
 - Chưa có forward secrecy, key ratchet, cơ chế chống Sybil hoặc chống spam theo danh tính. Headers làm lộ metadata.
-- SQLite trong sandbox ứng dụng chứa nội dung inbox/outbox đã giải mã; chưa mã hóa database. Đây là bản đồ án cần audit trước khi dùng cho vận hành cứu hộ.
+- SQLite trong sandbox ứng dụng chứa nội dung inbox/outbox đã giải mã, danh bạ (tên tự khai và khóa công khai) và tên hiển thị; chưa mã hóa database. Đây là bản đồ án cần audit trước khi dùng cho vận hành cứu hộ.
 
 ## Nguồn kỹ thuật
 

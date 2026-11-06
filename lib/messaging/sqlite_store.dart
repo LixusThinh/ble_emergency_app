@@ -1,30 +1,23 @@
 import 'dart:typed_data';
 
-import 'package:path/path.dart' as path;
 import 'package:sqflite/sqflite.dart';
 
+import '../core/contact.dart';
 import '../core/packet.dart';
+import 'schema.dart';
 import 'store.dart';
 
 class SqliteStore implements MessageStore {
   final Database db;
   SqliteStore._(this.db);
-  static Future<SqliteStore> open() async {
-    final db = await openDatabase(
-      path.join(await getDatabasesPath(), 'emergency_mesh.db'),
-      version: 1,
-      onCreate: (db, _) async {
-        await db.execute(
-          'CREATE TABLE packets (id TEXT PRIMARY KEY, bytes BLOB NOT NULL, created INTEGER NOT NULL, priority INTEGER NOT NULL, acked INTEGER NOT NULL DEFAULT 0)',
-        );
-        await db.execute(
-          'CREATE TABLE messages (id TEXT PRIMARY KEY, bytes BLOB NOT NULL, sender TEXT NOT NULL, text TEXT NOT NULL, outgoing INTEGER NOT NULL, acked INTEGER NOT NULL DEFAULT 0, lat REAL, lon REAL, created INTEGER NOT NULL)',
-        );
-        await db.execute('CREATE INDEX packets_created ON packets(created)');
-      },
-    );
-    return SqliteStore._(db);
-  }
+
+  /// [factory] and [file] are for tests on the desktop (sqflite FFI).
+  static Future<SqliteStore> open({
+    DatabaseFactory? factory,
+    String? file,
+  }) async => SqliteStore._(
+    await openMeshDatabase(factory: factory, file: file, singleInstance: false),
+  );
 
   @override
   Future<bool> hasSeen(String id) async => (await db.query(
@@ -126,6 +119,33 @@ class SqliteStore implements MessageStore {
         whereArgs: [id],
       );
       await t.update('packets', {'acked': 1}, where: 'id = ?', whereArgs: [id]);
+    });
+  }
+
+  @override
+  Future<List<Contact>> contacts() async =>
+      (await db.query('contacts', orderBy: 'last_seen DESC'))
+          .map(
+            (r) => Contact(
+              r['id'] as String,
+              r['name'] as String,
+              r['exchange_key'] as Uint8List,
+            ),
+          )
+          .toList();
+
+  @override
+  Future<void> saveContact(Contact contact, int seen) async {
+    await db.transaction((t) async {
+      await t.insert('contacts', {
+        'id': contact.id,
+        'name': contact.name,
+        'exchange_key': contact.exchangeKey,
+        'last_seen': seen,
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
+      await t.rawDelete(
+        'DELETE FROM contacts WHERE id IN (SELECT id FROM contacts ORDER BY last_seen DESC LIMIT -1 OFFSET $maxContacts)',
+      );
     });
   }
 

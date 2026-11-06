@@ -2,6 +2,17 @@
 
 Nhóm thực hiện: **Trần Gia Thịnh** (nhóm trưởng, 2380602136), Đỗ Minh Quang (2380601802), Nguyễn Thanh Hải (1911065203), Hồ Uy Thiện (2380602107).
 
+## Cập nhật 06/11/2026 — nâng cấp database (nhánh `feat/database`)
+
+| Kiểm tra | Kết quả |
+|---|---|
+| `flutter analyze` | Không có issue |
+| `flutter test` | 36 test đạt (29 trước đó + 6 test SQLite thật qua `sqflite_common_ffi` + 1 widget test chọn giao diện) |
+| Android integration | Đạt; thêm bước kiểm tra `user_version` = 2 và lưu/đọc lại cài đặt bằng SQLite trên máy |
+| Nâng cấp v1 → v2 trên emulator | Đạt. Cài bản `506fab4` (schema v1), ghi một tin "TIN TỪ BẢN 1.0.0", kéo file DB về: `user_version` 1, chỉ có `packets`, `messages`. Cài bản mới đè lên (giữ dữ liệu), chạy integration, kéo DB về: `user_version` 2, có thêm `contacts`, `settings` và 4 index, tin cũ vẫn còn |
+
+Test migration chỉ đi từ v1 (bản đã phát hành duy nhất). Tên và giao diện lưu qua `main()` chưa được kiểm bằng integration (integration dựng app với cài đặt tạm); kho cài đặt SQLite được kiểm trực tiếp.
+
 ## Cập nhật 06/11/2026 — nâng cấp giao diện (nhánh `feat/ux-ui`)
 
 | Kiểm tra | Kết quả |

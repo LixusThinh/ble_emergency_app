@@ -4,9 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
+import 'package:sqflite/sqflite.dart';
 import 'package:ble_emergency_app/main.dart';
 import 'package:ble_emergency_app/core/identity.dart';
 import 'package:ble_emergency_app/core/packet.dart';
+import 'package:ble_emergency_app/app/settings.dart';
+import 'package:ble_emergency_app/messaging/schema.dart';
+import 'package:ble_emergency_app/messaging/settings_store.dart';
 import 'package:ble_emergency_app/messaging/sqlite_store.dart';
 import 'package:ble_emergency_app/routing/router.dart';
 import 'package:ble_emergency_app/simulator/network.dart';
@@ -63,6 +67,18 @@ void main() {
       identity.id,
     );
     var store = await SqliteStore.open();
+    // On a phone that ran 1.0.0 this open also upgrades the schema.
+    expect(await store.db.getVersion(), schemaVersion);
+    final settingsStore = await SqliteSettingsStore.open();
+    var settings = await AppSettings.load(settingsStore);
+    final before = settings.name;
+    settings.name = 'Máy kiểm thử';
+    await settings.saved;
+    settings = await AppSettings.load(settingsStore);
+    expect(settings.name, 'Máy kiểm thử');
+    settings.name = before;
+    await settings.saved;
+    await settingsStore.close();
     final r = MeshRouter(
       identity: identity,
       transport: SimNetwork().node('test'),

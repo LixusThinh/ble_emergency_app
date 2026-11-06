@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ble_emergency_app/app/controller.dart';
+import 'package:ble_emergency_app/app/settings.dart';
 import 'package:ble_emergency_app/core/packet.dart';
 import 'package:ble_emergency_app/main.dart';
 import 'package:ble_emergency_app/ui/sos_dialog.dart';
@@ -110,5 +111,27 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Thiết bị trong mạng'), findsOneWidget);
     expect(find.text('Đến tab Khẩn cấp'), findsOneWidget);
+  });
+
+  testWidgets('theme selector switches the app theme and keeps the choice', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final settings = AppSettings.memory();
+    await tester.pumpWidget(EmergencyApp(settings: settings));
+    await tester.tap(find.text('Thiết bị'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Tối'));
+    await tester.tap(find.text('Tối'));
+    await tester.pumpAndSettle();
+    expect(settings.themeMode, ThemeMode.dark);
+    expect(
+      Theme.of(tester.element(find.text('SOS MESH'))).brightness,
+      Brightness.dark,
+    );
+    expect(tester.takeException(), isNull);
   });
 }

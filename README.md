@@ -52,7 +52,8 @@ Flutter + Kotlin · Android 8.0 trở lên (API 26) · Đồ án môn học
 
 ### 6. Chạy nền và lưu trữ
 - **Foreground service:** mạng tiếp tục hoạt động khi tắt màn hình hoặc chuyển sang ứng dụng khác (có thông báo thường trực).
-- **SQLite** lưu hộp thư đến, tin chờ gửi và bảng chống trùng. Tin vẫn còn sau khi tắt và mở lại ứng dụng.
+- **SQLite** lưu hộp thư đến, tin chờ gửi, bảng chống trùng, **danh bạ** các máy đã gặp và **cài đặt** (tên hiển thị, giao diện sáng/tối). Mở lại ứng dụng vẫn còn tin, tên của mọi người và có thể nhắn riêng ngay mà không cần chờ gặp lại.
+- Database có **đánh số phiên bản và migration**: bản cập nhật nâng schema tại chỗ, giữ nguyên dữ liệu cũ.
 - Xin quyền đúng theo phiên bản Android: *Thiết bị lân cận* (12+), *Vị trí* (11 trở xuống), *Thông báo* (13+), GPS khi gửi SOS.
 
 ### 7. Mô phỏng và đánh giá
@@ -120,7 +121,7 @@ docs/              Kiến trúc, kế hoạch kiểm thử, kết quả xác min
 ## Kiểm thử
 
 - `flutter analyze`: không có lỗi.
-- `flutter test`: **29/29 test đạt**. Các test gồm: ký và chống sửa gói, phân mảnh MTU 23, chuyển tiếp A–B–C, chống trùng trên mạng tam giác, lưu chờ chuyển tiếp, ACK, gói giả mạo, ưu tiên SOS, tên người gửi qua nhiều chặng, gộp kết nối trùng, giao diện trên màn hình nhỏ, giao diện tối, lọc tin theo cuộc trò chuyện, soạn SOS, nhãn ngày.
+- `flutter test`: **36/36 test đạt** (trong đó 6 test chạy SQLite thật qua FFI: migration từ bản 1.0.0, danh bạ, cài đặt, khôi phục danh bạ sau khởi động lại). Các test gồm: ký và chống sửa gói, phân mảnh MTU 23, chuyển tiếp A–B–C, chống trùng trên mạng tam giác, lưu chờ chuyển tiếp, ACK, gói giả mạo, ưu tiên SOS, tên người gửi qua nhiều chặng, gộp kết nối trùng, giao diện trên màn hình nhỏ, giao diện tối, lọc tin theo cuộc trò chuyện, soạn SOS, nhãn ngày.
 - Integration test trên Android (emulator Pixel 7 Pro, API 37) **đạt ngày 06/11/2026** sau khi nâng cấp giao diện; ảnh trong `docs/screenshots/` chụp từ lần chạy này.
 - **BLE trên điện thoại thật chưa được kiểm chứng.** Kế hoạch đo nằm ở [docs/TEST_PLAN.md](docs/TEST_PLAN.md).
 
