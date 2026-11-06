@@ -37,10 +37,10 @@ class EmergencyTab extends StatelessWidget {
         style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
       ),
       const SizedBox(height: 4),
-      const Text(
+      Text(
         'Kèm GPS nếu có. Ứng dụng không tự gọi cơ quan cứu hộ.',
         textAlign: TextAlign.center,
-        style: TextStyle(fontSize: 12, color: muted),
+        style: TextStyle(fontSize: 12, color: context.palette.muted),
       ),
       const SizedBox(height: 18),
       Row(
@@ -50,7 +50,10 @@ class EmergencyTab extends StatelessWidget {
               onPressed: !online || c.busy
                   ? null
                   : () => c.send(MessageKind.safe, 'Tôi an toàn'),
-              icon: const Icon(Icons.check_circle_outline, color: teal),
+              icon: Icon(
+                Icons.check_circle_outline,
+                color: context.palette.accent,
+              ),
               label: const Text('Tôi an toàn'),
             ),
           ),
@@ -58,7 +61,10 @@ class EmergencyTab extends StatelessWidget {
           Expanded(
             child: OutlinedButton.icon(
               onPressed: () => onTab(1),
-              icon: const Icon(Icons.chat_bubble_outline, color: teal),
+              icon: Icon(
+                Icons.chat_bubble_outline,
+                color: context.palette.accent,
+              ),
               label: const Text('Nhắn tin'),
             ),
           ),
@@ -156,9 +162,9 @@ class _JoinCard extends StatelessWidget {
             style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 2),
-          const Text(
+          Text(
             'Tên này hiện trên máy của người khác.',
-            style: TextStyle(color: muted, fontSize: 13),
+            style: TextStyle(color: context.palette.muted, fontSize: 13),
           ),
           const SizedBox(height: 14),
           TextFormField(
@@ -194,6 +200,7 @@ class NetworkCard extends StatelessWidget {
   const NetworkCard({super.key, required this.c});
   @override
   Widget build(BuildContext context) {
+    final p = context.palette;
     final r = c.router!;
     return Card(
       child: Padding(
@@ -207,12 +214,12 @@ class NetworkCard extends StatelessWidget {
                   width: 42,
                   height: 42,
                   decoration: BoxDecoration(
-                    color: tealSoft,
+                    color: p.accentSoft,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(
                     c.demo ? Icons.science_outlined : Icons.bluetooth_connected,
-                    color: teal,
+                    color: p.accent,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -233,7 +240,7 @@ class NetworkCard extends StatelessWidget {
                         c.demo
                             ? 'Dữ liệu trên màn hình là mô phỏng'
                             : 'Đang quảng bá và quét thiết bị gần',
-                        style: const TextStyle(color: muted, fontSize: 12),
+                        style: TextStyle(color: p.muted, fontSize: 12),
                       ),
                     ],
                   ),

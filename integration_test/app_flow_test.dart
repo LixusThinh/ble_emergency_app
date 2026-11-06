@@ -123,6 +123,8 @@ void main() {
     await tester.tap(find.widgetWithIcon(IconButton, Icons.lock_outline).first);
     await settle(tester);
     await tester.enterText(find.byType(TextField), 'Tin riêng kiểm thử');
+    // The send button enables itself on the next frame after text arrives.
+    await settle(tester);
     await tester.tap(find.byTooltip('Gửi tin nhắn'));
     await waitFor(tester, find.text('Người nhận đã xác nhận'));
     expect(find.text('Tin riêng kiểm thử'), findsOneWidget);
@@ -136,6 +138,8 @@ void main() {
     await tester.tap(find.text('Chạy đánh giá'));
     await waitFor(tester, find.text('TỶ LỆ NHẬN SOS'));
     expect(find.text('TỶ LỆ NHẬN SOS'), findsOneWidget);
+    // Let the slider and button finish animating back to enabled.
+    await settle(tester);
     await capture('05-simulator');
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
