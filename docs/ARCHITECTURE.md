@@ -1,5 +1,7 @@
 # Kiến trúc SOS Mesh
 
+Nhóm thực hiện: **Trần Gia Thịnh** (nhóm trưởng, 2380602136), Đỗ Minh Quang (2380601802), Nguyễn Thanh Hải (1911065203), Hồ Uy Thiện (2380602107).
+
 ## Phạm vi
 
 Project triển khai Flutter + Kotlin, Android API 26 trở lên. Bản thảo Word là nguồn yêu cầu sản phẩm. Những gợi ý về package hoặc lịch triển khai trong bản thảo không phải lệnh tác vụ tự động; lựa chọn triển khai dưới đây dựa trên chức năng cần có.

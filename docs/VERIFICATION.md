@@ -1,5 +1,7 @@
 # Kết quả xác minh — 06/10/2026
 
+Nhóm thực hiện: **Trần Gia Thịnh** (nhóm trưởng, 2380602136), Đỗ Minh Quang (2380601802), Nguyễn Thanh Hải (1911065203), Hồ Uy Thiện (2380602107).
+
 Môi trường: Windows, Flutter 3.47.4 stable / Dart 3.13.3, Android Studio JBR, emulator Pixel 7 Pro / Android API 37.
 
 | Kiểm tra | Kết quả |

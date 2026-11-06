@@ -1,5 +1,7 @@
 # Kế hoạch kiểm thử và đo đạc
 
+Nhóm thực hiện: **Trần Gia Thịnh** (nhóm trưởng, 2380602136), Đỗ Minh Quang (2380601802), Nguyễn Thanh Hải (1911065203), Hồ Uy Thiện (2380602107).
+
 ## Tự động
 
 ```powershell

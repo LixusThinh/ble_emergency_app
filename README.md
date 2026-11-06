@@ -138,6 +138,13 @@ docs/              Kiến trúc, kế hoạch kiểm thử, kết quả xác min
 - [Kết quả xác minh](docs/VERIFICATION.md)
 - [Hướng dẫn chạy chi tiết](README.vi.md)
 
-## Tác giả
+## Nhóm thực hiện
 
-**Lixusthinh** · [github.com/LixusThinh](https://github.com/LixusThinh)
+| STT | Họ và tên | MSSV | Vai trò |
+|:---:|---|---|---|
+| 1 | Trần Gia Thịnh | 2380602136 | Nhóm trưởng |
+| 2 | Đỗ Minh Quang | 2380601802 | Thành viên |
+| 3 | Nguyễn Thanh Hải | 1911065203 | Thành viên |
+| 4 | Hồ Uy Thiện | 2380602107 | Thành viên |
+
+Repo: [github.com/LixusThinh/ble_emergency_app](https://github.com/LixusThinh/ble_emergency_app)

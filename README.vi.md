@@ -91,3 +91,12 @@ Chữ ký xác nhận khóa nguồn phát, không chứng minh tên/người/cơ
 Chưa triển khai iOS, bản đồ offline và giao diện điều chỉnh duty cycle. Không dùng số CPU simulator làm số đo latency BLE.
 
 Kết quả hiện tại (18/10/2026): analyzer sạch, 21 test đạt. Integration Android đạt ở bản 06/10/2026, chưa chạy lại sau khi làm lại giao diện; ảnh trong `docs/screenshots/` vẫn là giao diện cũ. Xem [kết quả xác minh](docs/VERIFICATION.md).
+
+## Nhóm thực hiện
+
+| STT | Họ và tên | MSSV | Vai trò |
+|:---:|---|---|---|
+| 1 | Trần Gia Thịnh | 2380602136 | Nhóm trưởng |
+| 2 | Đỗ Minh Quang | 2380601802 | Thành viên |
+| 3 | Nguyễn Thanh Hải | 1911065203 | Thành viên |
+| 4 | Hồ Uy Thiện | 2380602107 | Thành viên |
