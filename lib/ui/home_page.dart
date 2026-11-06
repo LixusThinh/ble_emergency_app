@@ -32,6 +32,8 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    c.error = widget.settings.launchNotice;
+    widget.settings.launchNotice = null;
     c.addListener(_changed);
   }
 

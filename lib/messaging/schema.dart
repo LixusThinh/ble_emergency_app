@@ -1,5 +1,6 @@
-import 'package:path/path.dart' as path;
-import 'package:sqflite/sqflite.dart';
+import 'dart:io';
+
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 const databaseName = 'emergency_mesh.db';
 
@@ -65,25 +66,152 @@ Future<void> _upgrade(DatabaseExecutor db, int from, int to) async {
   }
 }
 
-/// Opens the app database and brings its schema to [version].
+/// The app database file and its key, set once at launch by
+/// [useMeshDatabase]. Tests pass a file of their own instead.
+String? _appFile, _appKey;
+
+/// A key is 32 random bytes as 64 hex digits; it is pasted into a PRAGMA, so
+/// nothing else is accepted.
+final _hexKey = RegExp(r'^[0-9a-f]{64}$');
+
+/// First 16 bytes of every unencrypted SQLite file.
+const _plainHeader = 'SQLite format 3\x00';
+
+/// Whether [file] is an unencrypted SQLite database.
+Future<bool> isPlainDatabase(String file) async {
+  final f = File(file);
+  if (!await f.exists() || await f.length() < 16) {
+    return false;
+  }
+  final raf = await f.open();
+  try {
+    return String.fromCharCodes(await raf.read(16)) == _plainHeader;
+  } finally {
+    await raf.close();
+  }
+}
+
+Future<void> _moveAll(String from, String to) async {
+  for (final suffix in ['', '-wal', '-shm', '-journal']) {
+    final f = File('$from$suffix');
+    if (await f.exists()) {
+      await f.rename('$to$suffix');
+    }
+  }
+}
+
+String _aside(String file) =>
+    '$file.unreadable-${DateTime.now().millisecondsSinceEpoch}';
+
+/// Makes [openMeshDatabase] use [file], encrypted with [key].
 ///
-/// [factory] and [file] let tests use an FFI database on the desktop.
-/// Each call with [singleInstance] false gets its own connection, so the
-/// settings connection outlives the message store being closed on stop.
+/// A database written before encryption (1.x) is encrypted in place first.
+/// A copy of the plain file is kept until the encrypted one opens, so an
+/// interrupted run starts over from that copy. A database [key] cannot open
+/// (the key was lost with the Keystore, or [discard] says so) is moved aside,
+/// not deleted, and a new one started: the app must open in an emergency.
+/// Returns a notice for the user when that happened.
+Future<String?> useMeshDatabase({
+  required String file,
+  required String key,
+  bool discard = false,
+  DatabaseFactory? factory,
+}) async {
+  if (!_hexKey.hasMatch(key)) {
+    throw ArgumentError('Khóa database phải là 64 chữ số hex');
+  }
+  final f = factory ?? databaseFactoryFfi;
+  final backup = File('$file.plain');
+  String? notice;
+  if (await backup.exists()) {
+    // Encryption was interrupted: the copy is the last good database.
+    await _moveAll(file, '$file.interrupted');
+    await backup.rename(file);
+  }
+  if (discard && await File(file).exists()) {
+    await _moveAll(file, _aside(file));
+    notice = 'Mất khóa mã hóa nên đã tạo database mới; tin cũ không mở được.';
+  }
+  if (await isPlainDatabase(file)) {
+    // DELETE mode folds the WAL into the main file, so the copy is complete
+    // and rekey, which does not run in WAL mode, can.
+    var db = await f.openDatabase(
+      file,
+      options: OpenDatabaseOptions(singleInstance: false),
+    );
+    await db.rawQuery('PRAGMA journal_mode = DELETE');
+    await db.close();
+    await File(file).copy(backup.path);
+    db = await f.openDatabase(
+      file,
+      options: OpenDatabaseOptions(singleInstance: false),
+    );
+    await db.rawQuery("PRAGMA hexrekey = '$key'");
+    await db.close();
+  }
+  if (await File(file).exists()) {
+    try {
+      final db = await f.openDatabase(
+        file,
+        options: OpenDatabaseOptions(
+          singleInstance: false,
+          onConfigure: (db) => db.rawQuery("PRAGMA hexkey = '$key'"),
+        ),
+      );
+      try {
+        await db.rawQuery('SELECT COUNT(*) FROM sqlite_master');
+      } finally {
+        await db.close();
+      }
+    } on DatabaseException catch (e) {
+      if (!'$e'.contains('not a database')) {
+        rethrow;
+      }
+      await _moveAll(file, _aside(file));
+      notice =
+          'Không mở được database bằng khóa đã lưu nên đã tạo database mới.';
+    }
+  }
+  if (await backup.exists()) {
+    await backup.delete();
+  }
+  _appFile = file;
+  _appKey = key;
+  return notice;
+}
+
+/// Opens a database and brings its schema to [version].
+///
+/// Without [file] it opens the app database set by [useMeshDatabase], with
+/// its key. With [file] (tests) it opens that file, encrypted only if [key]
+/// is given. Each call with [singleInstance] false gets its own connection,
+/// so the settings connection outlives the message store being closed on
+/// stop.
 Future<Database> openMeshDatabase({
   DatabaseFactory? factory,
   String? file,
+  String? key,
   int version = schemaVersion,
   bool singleInstance = true,
 }) async {
-  final f = factory ?? databaseFactory;
-  final location = file ?? path.join(await f.getDatabasesPath(), databaseName);
-  return f.openDatabase(
+  final location = file ?? _appFile;
+  final secret = file == null ? _appKey : key;
+  if (location == null) {
+    throw StateError('Chưa gọi useMeshDatabase');
+  }
+  if (secret != null && !_hexKey.hasMatch(secret)) {
+    throw ArgumentError('Khóa database phải là 64 chữ số hex');
+  }
+  return (factory ?? databaseFactoryFfi).openDatabase(
     location,
     options: OpenDatabaseOptions(
       version: version,
       singleInstance: singleInstance,
       onConfigure: (db) async {
+        if (secret != null) {
+          // Must come first: every page, the WAL's included, uses this key.
+          await db.rawQuery("PRAGMA hexkey = '$secret'");
+        }
         // WAL lets the UI read while the router writes, and allows the
         // settings and message connections to coexist.
         await db.rawQuery('PRAGMA journal_mode = WAL');

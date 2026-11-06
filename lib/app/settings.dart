@@ -15,6 +15,9 @@ class AppSettings extends ChangeNotifier {
   /// the in-memory value either way.
   Object? lastWriteError;
 
+  /// Shown once when the app opens, e.g. that the database had to be reset.
+  String? launchNotice;
+
   AppSettings._(this._store, this._name, this._themeMode);
 
   /// Settings that are never persisted (widget tests, storage failure).

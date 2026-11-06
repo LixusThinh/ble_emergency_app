@@ -1,4 +1,4 @@
-import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'schema.dart';
 
@@ -33,8 +33,14 @@ class SqliteSettingsStore implements SettingsStore {
   static Future<SqliteSettingsStore> open({
     DatabaseFactory? factory,
     String? file,
+    String? key,
   }) async => SqliteSettingsStore._(
-    await openMeshDatabase(factory: factory, file: file, singleInstance: false),
+    await openMeshDatabase(
+      factory: factory,
+      file: file,
+      key: key,
+      singleInstance: false,
+    ),
   );
 
   @override

@@ -28,7 +28,7 @@ Giao diện đọc kho theo kiểu tăng dần: một đợt cập nhật dồn 
 
 ## Lưu trữ SQLite (schema v4)
 
-File `emergency_mesh.db` trong sandbox ứng dụng. Mã: `lib/messaging/schema.dart` (schema + migration), `sqlite_store.dart` (tin, gói, danh bạ), `settings_store.dart` (cài đặt).
+File `emergency_mesh.db` trong sandbox ứng dụng, **mã hóa toàn bộ** (xem bên dưới). Mã: `lib/messaging/schema.dart` (schema, migration, mở và mã hóa database), `sqlite_store.dart` (tin, gói, danh bạ), `settings_store.dart` (cài đặt), `lib/app/storage.dart` (lấy khóa từ Android lúc mở app).
 
 | Bảng | Nội dung | Giới hạn |
 |---|---|---|
@@ -48,6 +48,14 @@ Index: `packets(created)`, `packets(acked, priority, created)` cho `pending()`, 
 - **Kết nối:** WAL và `busy_timeout` 3 giây. Cài đặt dùng một kết nối riêng mở suốt vòng đời app; kho tin mở khi bật mạng và đóng khi tắt mạng, nên đóng kho tin không làm mất cài đặt.
 - **Danh bạ:** router nạp danh bạ khi khởi động, nên tên người gửi và nhắn riêng dùng được ngay sau khi mở lại app, trước khi gặp lại máy kia. Router ghi khi gặp node mới, khi tên hoặc khóa thay đổi, hoặc khi lần ghi trước đã quá 1 phút.
 - Mất file cài đặt hoặc lỗi mở database lúc khởi động không chặn app: cài đặt chuyển sang bộ nhớ tạm và chỉ không được lưu.
+
+### Mã hóa database
+
+- **Engine:** SQLite3 Multiple Ciphers (SQLite 3.54, ChaCha20-Poly1305 theo trang), đóng gói cùng app qua `package:sqlite3` (hook `source: sqlite3mc` trong `pubspec.yaml`) và dùng qua `sqflite_common_ffi`. Điện thoại và test trên máy tính/CI chạy cùng một engine, nên test kiểm được mã hóa thật. Mọi trang, kể cả file WAL, đều được mã hóa.
+- **Khóa:** 32 byte ngẫu nhiên (`SecureRandom`), tạo lần đầu mở app. Khóa được bọc bằng khóa AES-GCM `mesh-database-v1` nằm trong Android Keystore (không rời thiết bị), lưu ở `shared_prefs/database.xml`. Khóa được ghi xuống đĩa (`commit()`) trước khi mã hóa database. `android:allowBackup="false"`.
+- **Nâng cấp từ bản chưa mã hóa:** lần đầu mở bản mới, `useMeshDatabase` thấy header `SQLite format 3` thì gộp WAL vào file chính, chép một bản `.plain`, mã hóa tại chỗ bằng `PRAGMA hexrekey`, mở thử bằng khóa rồi xóa bản chép. Nếu app bị tắt giữa chừng, lần mở sau khôi phục từ bản `.plain` và làm lại.
+- **Mất khóa** (Keystore bị xóa, khóa không mở được database): file cũ được đổi tên thành `.unreadable-<thời điểm>` (không xóa), app tạo database mới và báo cho người dùng. App vẫn mở được trong tình huống khẩn cấp.
+- Chi phí đo trên máy tính: ghi gói/tin gần như không đổi (1,0 ms; 0,6 ms); `pending()` với 5000 gói 5 → 9–10 ms (chỉ chạy khi gặp máy mới).
 
 ## BLE Android
 
@@ -115,7 +123,7 @@ Chống trùng giữ bản nhận đầu tiên, nên tuyến dài đến trướ
 - Seeds danh tính được mã hóa AES-GCM bằng khóa Android Keystore, lưu ciphertext trong SharedPreferences, tắt backup.
 - Tên hiển thị không chứng minh danh tính. So sánh ID qua kênh đáng tin trước khi gửi tin nhạy cảm. Không có danh bạ được xác minh trước hoặc chứng chỉ cơ quan cứu hộ.
 - Chưa có forward secrecy, key ratchet, cơ chế chống Sybil hoặc chống spam theo danh tính. Headers làm lộ metadata.
-- SQLite trong sandbox ứng dụng chứa nội dung inbox/outbox đã giải mã, danh bạ (tên tự khai và khóa công khai) và tên hiển thị; chưa mã hóa database. Đây là bản đồ án cần audit trước khi dùng cho vận hành cứu hộ.
+- Database được mã hóa bằng khóa trong Android Keystore, nhưng khi app đang chạy thì khóa nằm trong bộ nhớ. Máy đã root hoặc mã độc chạy cùng quyền app vẫn đọc được. Mã hóa bảo vệ file khi bị sao chép ra ngoài (sao lưu, chép qua adb, đọc trực tiếp bộ nhớ flash). Đây là bản đồ án cần audit trước khi dùng cho vận hành cứu hộ.
 
 ## Nguồn kỹ thuật
 
