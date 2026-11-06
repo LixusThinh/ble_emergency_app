@@ -38,7 +38,7 @@ Flutter + Kotlin · Android 8.0 trở lên (API 26) · Đồ án môn học
 - **Phân mảnh gói tin** theo MTU của từng kết nối (23–185 byte) và ghép lại ở máy nhận, có giới hạn bộ nhớ và thời gian chờ.
 - Khi thấy ACK hợp lệ, mọi máy đang giữ tin riêng đó, kể cả máy trung gian, đều ngừng chuyển tiếp nó.
 - **Mỗi máy kề một hàng đợi gửi riêng:** đồng bộ tồn đọng cho một máy không làm chậm việc nhận tin từ máy khác. Hai kết nối tới cùng một điện thoại chỉ gửi mỗi gói một lần (trước đây gửi hai lần và dội ngược lại). Gửi lỗi được tự thử lại mỗi 30 giây mà không cần ngắt kết nối.
-- Kho 5000 gói khi đầy bỏ gói đã xác nhận và tin chat trước, **giữ SOS** lại để tiếp tục chuyển tiếp.
+- Kho 5000 gói khi đầy bỏ gói đã xác nhận trước, rồi bỏ từ người đang giữ nhiều gói nhất, nên một máy phát tràn không đẩy được SOS của người khác ra.
 
 ### 4. Thiết bị trong mạng
 - Danh sách **kết nối trực tiếp** kèm cường độ tín hiệu (RSSI, cột sóng), mức tín hiệu và MTU.
@@ -53,6 +53,7 @@ Flutter + Kotlin · Android 8.0 trở lên (API 26) · Đồ án môn học
 - **Khóa danh tính** được mã hóa bằng khóa trong Android Keystore và không đưa vào bản sao lưu.
 - **Database mã hóa toàn bộ** (SQLite3 Multiple Ciphers, ChaCha20): tin nhắn, danh bạ và cài đặt trên máy không đọc được nếu thiếu khóa. Khóa ngẫu nhiên 256 bit do Android Keystore giữ. Bản cũ chưa mã hóa được tự mã hóa khi cập nhật, giữ nguyên dữ liệu.
 - Loại gói quá cũ (hơn 24 giờ) hoặc có thời gian lệch về tương lai quá 5 phút.
+- **Chống flood:** mỗi người gửi có hạn mức (200 gói một lúc, sau đó 30 gói/phút; SOS 10 gói, sau đó 2/phút). Gói vượt hạn mức không được lưu hay chuyển tiếp. Kết nối gửi nhiều gói giả chữ ký bị bỏ qua 5 phút.
 
 ### 6. Chạy nền và lưu trữ
 - **Foreground service:** mạng tiếp tục hoạt động khi tắt màn hình hoặc chuyển sang ứng dụng khác (có thông báo thường trực).
@@ -126,8 +127,8 @@ docs/              Kiến trúc, kế hoạch kiểm thử, kết quả xác min
 ## Kiểm thử
 
 - `flutter analyze`: không có lỗi.
-- `flutter test`: **64/64 test đạt** (trong đó 7 test mã hóa database: không khóa/sai khóa không mở được, nâng cấp DB cũ chưa mã hóa giữ dữ liệu, khôi phục khi bị ngắt giữa chừng, mất khóa; 10 test chạy SQLite thật qua FFI: migration từ bản 1.0.0, danh bạ, cài đặt, khôi phục danh bạ sau khởi động lại, đếm máy đã nhận, thứ tự bỏ gói khi đầy, đọc tin theo revision, cắt bảng tin; 9 test router: hai kết nối một máy, SOS không bị kẹt sau tồn đọng, thử lại khi gửi lỗi, không gửi ngược, kết nối không chào hỏi; 4 test isolate kiểm chữ ký; 4 test controller: gộp và đọc tăng dần). Các test gồm: ký và chống sửa gói, phân mảnh MTU 23, chuyển tiếp A–B–C, chống trùng trên mạng tam giác, lưu chờ chuyển tiếp, ACK, gói giả mạo, ưu tiên SOS, tên người gửi qua nhiều chặng, gộp kết nối trùng, giao diện trên màn hình nhỏ, giao diện tối, lọc tin theo cuộc trò chuyện, soạn SOS, nhãn ngày.
-- Integration test trên Android (emulator Pixel 7 Pro, API 37) **đạt ngày 07/11/2026** sau khi nâng cấp hiệu năng, kể cả nâng cấp database v3 → v4 giữ nguyên dữ liệu; ảnh trong `docs/screenshots/` chụp từ lần chạy này.
+- `flutter test`: **77/77 test đạt** (trong đó 13 test chống flood: hạn mức theo người gửi, gói giả không làm cạn hạn mức của người thật, tắt tiếng kết nối gửi gói giả, chia đều kho theo người gửi, migration v5; 7 test mã hóa database: không khóa/sai khóa không mở được, nâng cấp DB cũ chưa mã hóa giữ dữ liệu, khôi phục khi bị ngắt giữa chừng, mất khóa; 10 test chạy SQLite thật qua FFI: migration từ bản 1.0.0, danh bạ, cài đặt, khôi phục danh bạ sau khởi động lại, đếm máy đã nhận, thứ tự bỏ gói khi đầy, đọc tin theo revision, cắt bảng tin; 9 test router: hai kết nối một máy, SOS không bị kẹt sau tồn đọng, thử lại khi gửi lỗi, không gửi ngược, kết nối không chào hỏi; 4 test isolate kiểm chữ ký; 4 test controller: gộp và đọc tăng dần). Các test gồm: ký và chống sửa gói, phân mảnh MTU 23, chuyển tiếp A–B–C, chống trùng trên mạng tam giác, lưu chờ chuyển tiếp, ACK, gói giả mạo, ưu tiên SOS, tên người gửi qua nhiều chặng, gộp kết nối trùng, giao diện trên màn hình nhỏ, giao diện tối, lọc tin theo cuộc trò chuyện, soạn SOS, nhãn ngày.
+- Integration test trên Android (emulator Pixel 7 Pro, API 37) **đạt ngày 07/11/2026** sau khi nâng cấp hiệu năng, kể cả nâng cấp database lên v5 (đã mã hóa) giữ nguyên dữ liệu; ảnh trong `docs/screenshots/` chụp từ lần chạy này.
 - **BLE trên điện thoại thật chưa được kiểm chứng.** Kế hoạch đo nằm ở [docs/TEST_PLAN.md](docs/TEST_PLAN.md).
 
 ## Giới hạn

@@ -2,6 +2,21 @@
 
 Nhóm thực hiện: **Trần Gia Thịnh** (nhóm trưởng, 2380602136), Đỗ Minh Quang (2380601802), Nguyễn Thanh Hải (1911065203), Hồ Uy Thiện (2380602107).
 
+## Cập nhật 07/11/2026 — chống flood (nhánh `feat/flood-guard`)
+
+| Kiểm tra | Kết quả |
+|---|---|
+| `flutter analyze` | Không có issue |
+| `flutter test` | 77 test đạt (64 trước đó + 13 test trong `flood_test.dart`) |
+| Máy phát tràn | Gửi 30 chat + 8 SOS qua relay có hạn mức 10 chat / 3 SOS: relay và máy phía sau chỉ nhận 12 tin (hello chiếm 1 suất chat), 26 gói bị chặn. SOS của một máy khác vẫn tới đích. Một phút sau, hạn mức hồi lại thêm một tin |
+| Gói giả chữ ký | 40 gói mạo danh người thật: 10 gói bị kiểm và loại, sau đó kết nối bị tắt tiếng (frame bị bỏ qua). Hạn mức của người thật không bị trừ: 4 tin tiếp theo của họ vẫn qua, không gói nào bị chặn nhầm |
+| Kho đầy | Một người gửi 5000 SOS mới hơn: SOS cũ hơn của người khác vẫn được giữ (MemoryStore và SQLite). Với thứ tự cũ (cũ nhất bị bỏ trước) thì SOS đó bị đẩy ra |
+| Kiểm tra ngược | Làm hỏng có chủ đích 6 chỗ, test bắt được cả 6: thứ tự cắt cũ (SQLite), thứ tự cũ (MemoryStore), không trừ hạn mức, trừ hạn mức trước khi kiểm chữ ký, không bỏ qua kết nối bị tắt tiếng, không đếm gói giả theo kết nối |
+| Android integration | Đạt. DB đã mã hóa ở v4 lên v5: tin "TIN TỪ BẢN 1.0.0" vẫn còn, gói cũ được điền `origin` = khóa ký, `ROW_NUMBER() OVER (PARTITION BY …)` chạy được trên engine của điện thoại |
+| Chi phí | `retain()` khi bảng đầy 1,0 → 1,1 ms (máy tính) |
+
+Chưa chống được Sybil (nhiều khóa giả); xem ARCHITECTURE, mục *Chống flood*.
+
 ## Cập nhật 07/11/2026 — mã hóa database (nhánh `feat/db-encryption`)
 
 | Kiểm tra | Kết quả |

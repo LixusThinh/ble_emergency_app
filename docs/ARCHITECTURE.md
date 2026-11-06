@@ -26,17 +26,19 @@ Transport chỉ biết peer, MTU và frame. Router nhận frame, ghép packet, x
 
 Giao diện đọc kho theo kiểu tăng dần: một đợt cập nhật dồn dập chỉ tốn một lần đọc đang chạy cộng tối đa một lần đọc nữa, và mỗi lần đọc chỉ trả các tin đã thay đổi. Emulator debug có thể xử lý crypto chậm; script CLI thuận tiện hơn cho benchmark 50–100 node.
 
-## Lưu trữ SQLite (schema v4)
+## Lưu trữ SQLite (schema v5)
 
 File `emergency_mesh.db` trong sandbox ứng dụng, **mã hóa toàn bộ** (xem bên dưới). Mã: `lib/messaging/schema.dart` (schema, migration, mở và mã hóa database), `sqlite_store.dart` (tin, gói, danh bạ), `settings_store.dart` (cài đặt), `lib/app/storage.dart` (lấy khóa từ Android lúc mở app).
 
 | Bảng | Nội dung | Giới hạn |
 |---|---|---|
-| `packets` | Gói đã xác minh: chống trùng và hàng chờ store-and-forward; `acked` = đã có ACK hợp lệ | 24 giờ, tối đa 5000; khi đầy bỏ gói đã ACK trước, rồi loại kém khẩn cấp (chat), rồi gói cũ nhất, nên chat tràn không đẩy được SOS ra |
+| `packets` | Gói đã xác minh: chống trùng và hàng chờ store-and-forward; `acked` = đã có ACK hợp lệ; `origin` (v5) = khóa ký của người gửi | 24 giờ, tối đa 5000; khi đầy bỏ gói đã ACK trước, rồi bỏ từ người gửi đang giữ nhiều gói nhất (xem *Chống flood*) |
 | `messages` | Inbox/outbox đã giải mã hiển thị trên UI | 2000 tin mới nhất (bảng được cắt theo lô khi vượt 2100) |
 | `contacts` (v2) | Node đã gặp: ID, tên tự khai, khóa trao đổi công khai, lần cuối thấy | 500 node gần nhất |
 | `settings` (v2) | Cặp khóa/giá trị: `display_name`, `theme_mode` | — |
 | `handoffs` (v3) | Tin của chính mình đã trao cho máy kề nào (ID tin, ID máy) | Xóa theo tin khi tin bị cắt khỏi `messages` |
+
+Cột `packets.origin` (v5) được điền cho gói cũ khi nâng cấp bằng cách đọc khóa ký trong gói; gói không đọc được nhận giá trị rỗng.
 
 Cột `messages.rev` (v4): mỗi lần ghi, xác nhận ACK hoặc thêm máy đã nhận đều tăng số phiên bản của tin. Giao diện chỉ đọc các tin có `rev` lớn hơn lần đọc trước (`changes()`), không đọc lại cả 2000 tin.
 
@@ -110,6 +112,17 @@ Frame có header 12 byte: magic `F`, version, token 4 byte, index uint16, totalF
 9. Gửi lỗi trên kết nối còn sống được thử lại: mỗi 30 giây router đưa lại các gói đang chờ cho mọi máy kề, bỏ qua gói máy đó đã có. Lỗi gửi được đếm trong `failedSends`, không hiện thành thông báo lỗi.
 10. Gói không đọc được (sai cấu trúc, sai chữ ký, không giải mã được) được đếm là bị loại. Lỗi của chính máy mình khi xử lý gói hợp lệ (ví dụ ghi database thất bại) được báo lên giao diện thay vì bị đếm lẫn vào gói bị loại.
 11. Với tin của chính mình, router ghi máy kề đã nhận vào bảng `handoffs`; giao diện hiện "Chưa đến máy nào" hoặc "Đã đến N máy gần". Chỉ tính máy đã chứng minh danh tính bằng HELLO. Con số này là số máy kề trực tiếp, không phải số máy trong cả mạng.
+12. Chống flood (`lib/routing/flood_guard.dart`), xem mục bên dưới.
+
+### Chống flood
+
+Một máy xấu có thể phát hàng nghìn gói hợp lệ (ký bằng khóa của chính nó) để làm đầy kho 5000 gói của cả mạng và đẩy SOS thật ra ngoài, hoặc gửi gói giả chữ ký để bắt máy khác tốn 3 ms CPU cho mỗi lần kiểm. Ba lớp chặn:
+
+1. **Hạn mức theo người gửi** (theo khóa ký): mỗi khóa được 200 gói mới một lúc, sau đó 30 gói/phút; SOS có hạn mức riêng nhỏ hơn (10 gói, sau đó 2/phút) vì SOS được ưu tiên trong mọi hàng đợi. Gói vượt hạn mức bị bỏ trước khi kiểm chữ ký: không lưu, không chuyển tiếp, đếm vào `limited`. Hạn mức chỉ bị trừ **sau khi** chữ ký hợp lệ, nên gói giả mạo không làm cạn hạn mức của người thật. Tin của chính máy mình không bị giới hạn. Một lượt mang tồn đọng (store-and-forward) của một người tới 200 tin vẫn qua được.
+2. **Tắt tiếng kết nối gửi gói giả:** kết nối gửi 20 gói sai cấu trúc hoặc sai chữ ký trong 1 phút bị bỏ qua 5 phút (frame bị bỏ trước khi ghép, đếm vào `ignoredFrames`). Gói hết hạn hoặc lệch giờ không bị tính, vì relay lệch đồng hồ vẫn là relay trung thực.
+3. **Chia đều kho theo người gửi:** khi kho đầy, gói đã ACK bị bỏ trước; sau đó mỗi người gửi giữ được gói tốt nhất của mình trước khi bất kỳ ai giữ gói thứ hai (trong cùng mức: SOS trước, mới trước). Người flood chỉ đẩy ra gói của chính họ. Trước đây kho bỏ gói cũ nhất trước, nên 5000 SOS giả mới hơn đẩy được SOS thật ra ngoài. Hàm `keepOrder` (MemoryStore) và câu SQL `ROW_NUMBER() OVER (PARTITION BY origin …)` (SqliteStore) dùng cùng thứ tự.
+
+Giới hạn: khóa mới có hạn mức đầy ngay, nên kẻ tấn công tạo nhiều khóa (Sybil) vẫn đi qua được. Lớp 3 làm việc này tốn công hơn: để đẩy ra một SOS thật của một người, kẻ tấn công cần khoảng 5000 khóa khác nhau, mỗi khóa ký một gói. Bộ đếm theo người gửi nằm trong bộ nhớ, giữ 2000 người gửi gần nhất, và đặt lại khi mở lại app.
 
 ACK chỉ xác nhận tin riêng, và chỉ được chấp nhận khi sender của ACK trùng recipient của tin gốc. Mọi node đang giữ tin gốc, kể cả relay, đánh dấu nó đã xong khi thấy ACK hợp lệ và ngừng sync tin đó. Broadcast không có xác nhận toàn mạng; UI chỉ thể hiện đã lưu/chuyển tiếp. Tin lỗi gửi được giữ để thử khi kết nối lại. Không có retry vô hạn trên kết nối đang giữ nguyên.
 
@@ -122,7 +135,7 @@ Chống trùng giữ bản nhận đầu tiên, nên tuyến dài đến trướ
 - Relay chỉ lưu/chuyển ciphertext tin riêng; không đưa vào inbox của relay.
 - Seeds danh tính được mã hóa AES-GCM bằng khóa Android Keystore, lưu ciphertext trong SharedPreferences, tắt backup.
 - Tên hiển thị không chứng minh danh tính. So sánh ID qua kênh đáng tin trước khi gửi tin nhạy cảm. Không có danh bạ được xác minh trước hoặc chứng chỉ cơ quan cứu hộ.
-- Chưa có forward secrecy, key ratchet, cơ chế chống Sybil hoặc chống spam theo danh tính. Headers làm lộ metadata.
+- Chưa có forward secrecy, key ratchet hoặc cơ chế chống Sybil (xem *Chống flood*: hạn mức theo khóa, tắt tiếng kết nối gửi gói giả, chia đều kho theo người gửi). Headers làm lộ metadata.
 - Database được mã hóa bằng khóa trong Android Keystore, nhưng khi app đang chạy thì khóa nằm trong bộ nhớ. Máy đã root hoặc mã độc chạy cùng quyền app vẫn đọc được. Mã hóa bảo vệ file khi bị sao chép ra ngoài (sao lưu, chép qua adb, đọc trực tiếp bộ nhớ flash). Đây là bản đồ án cần audit trước khi dùng cho vận hành cứu hộ.
 
 ## Nguồn kỹ thuật
