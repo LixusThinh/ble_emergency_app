@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 
-import 'package:sqflite/sqflite.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import '../core/contact.dart';
 import '../core/packet.dart';
@@ -24,28 +24,32 @@ class SqliteStore implements MessageStore {
   int _revision;
   SqliteStore._(this.db, this._revision);
 
-  /// [factory] and [file] are for tests on the desktop (sqflite FFI).
+  /// Opens the app database; [factory], [file] and [key] are for tests.
   static Future<SqliteStore> open({
     DatabaseFactory? factory,
     String? file,
+    String? key,
   }) async {
     final db = await openMeshDatabase(
       factory: factory,
       file: file,
+      key: key,
       singleInstance: false,
     );
-    final rev = Sqflite.firstIntValue(
-      await db.rawQuery('SELECT COALESCE(MAX(rev), 0) FROM messages'),
+    return SqliteStore._(
+      db,
+      await _int(db, 'SELECT COALESCE(MAX(rev), 0) FROM messages'),
     );
-    return SqliteStore._(db, rev ?? 0);
   }
+
+  static Future<int> _int(DatabaseExecutor t, String sql) async =>
+      ((await t.rawQuery(sql)).first.values.first as int?) ?? 0;
 
   static int _cutoff() =>
       DateTime.now().subtract(const Duration(hours: 24)).millisecondsSinceEpoch;
 
-  static Future<int> _count(DatabaseExecutor t, String table) async =>
-      Sqflite.firstIntValue(await t.rawQuery('SELECT COUNT(*) FROM $table')) ??
-      0;
+  static Future<int> _count(DatabaseExecutor t, String table) =>
+      _int(t, 'SELECT COUNT(*) FROM $table');
 
   @override
   Future<bool> hasSeen(String id) async => (await db.query(

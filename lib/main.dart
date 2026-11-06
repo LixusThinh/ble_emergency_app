@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'app/settings.dart';
+import 'app/storage.dart';
 import 'messaging/settings_store.dart';
 import 'ui/home_page.dart';
 import 'ui/theme.dart';
@@ -9,7 +10,9 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   AppSettings settings;
   try {
-    settings = await AppSettings.load(await SqliteSettingsStore.open());
+    final notice = await prepareAppDatabase();
+    settings = await AppSettings.load(await SqliteSettingsStore.open())
+      ..launchNotice = notice;
   } catch (e) {
     // The app must still open in an emergency; settings just won't persist.
     debugPrint('Không mở được cài đặt: $e');

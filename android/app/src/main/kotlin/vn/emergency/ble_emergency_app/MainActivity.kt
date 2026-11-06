@@ -19,6 +19,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import java.security.KeyStore
+import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -54,6 +55,8 @@ class MainActivity : FlutterActivity() {
                     "location" -> withPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), result) { locate(result) }
                     "loadIdentity" -> result.success(loadIdentity())
                     "saveIdentity" -> { saveIdentity(call.argument<String>("value")!!); result.success(null) }
+                    "databaseDirectory" -> result.success(getDatabasePath("emergency_mesh.db").parent)
+                    "databaseKey" -> try { result.success(databaseKey(call.argument<Boolean>("reset") == true)) } catch (e: Exception) { result.error("KEY_LOST", e.message, null) }
                     else -> result.notImplemented()
                 }
             } catch (e: Exception) { result.error("BLE_ERROR", e.message, null) }
@@ -94,10 +97,27 @@ class MainActivity : FlutterActivity() {
         }
         manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0L, 0f, listener, Looper.getMainLooper()); handler.postDelayed(timeout, 12000)
     }
-    private fun key(): SecretKey {
+    private fun key(alias: String = "mesh-identity-v1"): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        (store.getKey("mesh-identity-v1", null) as? SecretKey)?.let { return it }
-        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply { init(KeyGenParameterSpec.Builder("mesh-identity-v1", KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT).setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build()) }.generateKey()
+        (store.getKey(alias, null) as? SecretKey)?.let { return it }
+        return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore").apply { init(KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT).setBlockModes(KeyProperties.BLOCK_MODE_GCM).setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE).build()) }.generateKey()
+    }
+    /** 32 random bytes as hex, the SQLite encryption key. Stored wrapped by a Keystore key that never leaves the device; created on first use, or anew when [reset]. */
+    private fun databaseKey(reset: Boolean): String {
+        val prefs = getSharedPreferences("database", MODE_PRIVATE)
+        val wrapped = prefs.getString("cipher", null)
+        if (wrapped != null && !reset) {
+            val iv = Base64.decode(prefs.getString("iv", null) ?: error("Missing database key IV"), Base64.NO_WRAP)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.DECRYPT_MODE, key("mesh-database-v1"), GCMParameterSpec(128, iv)) }
+            return String(cipher.doFinal(Base64.decode(wrapped, Base64.NO_WRAP)), Charsets.UTF_8)
+        }
+        val raw = ByteArray(32).also { SecureRandom().nextBytes(it) }
+        val hex = raw.joinToString("") { "%02x".format(it) }
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key("mesh-database-v1")) }
+        val encrypted = cipher.doFinal(hex.toByteArray(Charsets.UTF_8))
+        // commit(), not apply(): the key must be on disk before the database is encrypted with it.
+        check(prefs.edit().putString("cipher", Base64.encodeToString(encrypted, Base64.NO_WRAP)).putString("iv", Base64.encodeToString(cipher.iv, Base64.NO_WRAP)).commit()) { "Không lưu được khóa database" }
+        return hex
     }
     private fun saveIdentity(value: String) {
         val cipher = Cipher.getInstance("AES/GCM/NoPadding").apply { init(Cipher.ENCRYPT_MODE, key()) }

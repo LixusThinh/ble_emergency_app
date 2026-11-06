@@ -34,6 +34,10 @@ dependencies:
   cryptography: ^2.9.0
   sqflite: ^2.4.2
   path: ^1.9.1
+  # The database runs on a bundled SQLite3 Multiple Ciphers build (see hooks
+  # below), so it is encrypted and the same engine runs on phones and in tests.
+  sqflite_common_ffi: ^2.4.5
+  sqlite3: ^3.9.0
 
 dev_dependencies:
   integration_test:
@@ -49,7 +53,6 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
-  sqflite_common_ffi: ^2.4.5
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -92,3 +95,9 @@ flutter:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+
+hooks:
+  user_defines:
+    sqlite3:
+      # SQLite3 Multiple Ciphers: SQLite with page-level encryption.
+      source: sqlite3mc

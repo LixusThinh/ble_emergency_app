@@ -162,6 +162,7 @@ void main() {
     final store = await SqliteStore.open(
       factory: databaseFactoryFfi,
       file: path.join(dir.path, 'perf.db'),
+      key: 'ab' * 32, // encrypted, as on the phone
     );
     final now = DateTime.now().millisecondsSinceEpoch;
     await store.db.transaction((t) async {

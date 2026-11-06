@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -5,7 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:sqflite/sqflite.dart';
+import 'package:path/path.dart' as path;
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:ble_emergency_app/app/storage.dart';
 import 'package:ble_emergency_app/main.dart';
 import 'package:ble_emergency_app/core/crypto_worker.dart';
 import 'package:ble_emergency_app/core/identity.dart';
@@ -89,9 +92,25 @@ void main() {
       isFalse,
     );
     worker.close();
+    // The database key is wrapped by the Android Keystore; a database left
+    // by an unencrypted version is encrypted by this first prepare.
+    expect(await prepareAppDatabase(), isNull);
     var store = await SqliteStore.open();
     // On a phone that ran 1.0.0 this open also upgrades the schema.
     expect(await store.db.getVersion(), schemaVersion);
+    final dbFile = path.join(
+      await AndroidBleTransport.databaseDirectory(),
+      databaseName,
+    );
+    expect(File(dbFile).existsSync(), isTrue);
+    expect(await isPlainDatabase(dbFile), isFalse);
+    // Without the key the file is unreadable.
+    await expectLater(
+      openMeshDatabase(file: dbFile, singleInstance: false),
+      throwsA(isA<DatabaseException>()),
+    );
+    // A second launch gets the same key back and opens the same data.
+    expect(await prepareAppDatabase(), isNull);
     final settingsStore = await SqliteSettingsStore.open();
     var settings = await AppSettings.load(settingsStore);
     final before = settings.name;

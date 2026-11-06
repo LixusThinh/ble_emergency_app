@@ -66,6 +66,16 @@ class AndroidBleTransport implements MeshTransport {
       channel.invokeMethod<String>('loadIdentity');
   static Future<void> saveIdentity(String value) =>
       channel.invokeMethod<void>('saveIdentity', {'value': value});
+
+  /// Folder Android keeps app databases in.
+  static Future<String> databaseDirectory() async =>
+      (await channel.invokeMethod<String>('databaseDirectory'))!;
+
+  /// The database encryption key, kept wrapped by the Android Keystore.
+  /// Throws a [PlatformException] when it can no longer be unwrapped;
+  /// [reset] then makes a new one.
+  static Future<String> databaseKey({bool reset = false}) async =>
+      (await channel.invokeMethod<String>('databaseKey', {'reset': reset}))!;
   static Future<Map<String, dynamic>?> location() async {
     final value = await channel.invokeMapMethod<String, dynamic>('location');
     return value;
