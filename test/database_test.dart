@@ -101,6 +101,11 @@ void main() {
     addTearDown(store.close);
     expect(await store.db.getVersion(), schemaVersion);
     expect((await store.messages()).single.text, 'trước khi nâng cấp');
+    // Rows from before schema v4 have revision 0 and still load.
+    expect(
+      (await store.changes(-1)).messages.single.text,
+      'trước khi nâng cấp',
+    );
     expect((await store.pending()).single.messageId, p.messageId);
     expect(await store.hasSeen(p.messageId), isTrue);
     expect(await store.contacts(), isEmpty);
@@ -260,13 +265,69 @@ void main() {
       for (final r in await store.db.query('packets', columns: ['id']))
         r['id'] as String,
     };
-    expect(ids, hasLength(maxPackets));
-    expect(ids, containsAll(['sos-cu', p.messageId]));
+    // One batch makes room: the settled packet first, then the oldest chat.
+    expect(ids, hasLength(maxPackets - trimBatch + 1));
+    expect(ids, containsAll(['sos-cu', p.messageId, 'chat0']));
     expect(ids, isNot(contains('da-xong')));
+    expect(ids, isNot(contains('chat${maxPackets - 3}')));
+    // Below the cap again, so the next packets are just inserted.
     await store.retain(await signed('mới nữa'));
-    final after = await store.db.query('packets', columns: ['id']);
-    expect(after.map((r) => r['id']), contains('sos-cu'));
-    // The oldest chat goes once nothing settled is left.
-    expect(after.map((r) => r['id']), isNot(contains('chat${maxPackets - 3}')));
+    expect(
+      await store.db.query('packets', columns: ['id']),
+      hasLength(maxPackets - trimBatch + 2),
+    );
+  });
+
+  test('changes() returns only what changed since a revision', () async {
+    var store = await SqliteStore.open(factory: factory, file: file);
+    final a = await signed('một'), b = await signed('hai');
+    await store.save(StoredMessage(a, 'me', 'một', outgoing: true));
+    await store.save(StoredMessage(b, 'x', 'hai'));
+    final first = await store.changes(-1);
+    expect(first.messages.map((m) => m.text), unorderedEquals(['một', 'hai']));
+    expect((await store.changes(first.revision)).messages, isEmpty);
+
+    await store.recordHandoff(a.messageId, 'n1');
+    final second = await store.changes(first.revision);
+    expect(second.messages.single.handoffs, 1);
+    await store.close();
+
+    // Revisions keep growing across a restart, so nothing is missed.
+    store = await SqliteStore.open(factory: factory, file: file);
+    addTearDown(store.close);
+    final c = await signed('ba');
+    await store.save(StoredMessage(c, 'x', 'ba'));
+    expect((await store.changes(second.revision)).messages.single.text, 'ba');
+  });
+
+  test('the message table is trimmed in batches to the newest 2000', () async {
+    final store = await SqliteStore.open(factory: factory, file: file);
+    addTearDown(store.close);
+    final template = await signed('cũ');
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await store.db.transaction((t) async {
+      for (var i = 0; i < maxMessages + trimBatch; i++) {
+        await t.insert('messages', {
+          'id': 'm$i',
+          'bytes': template.encode(),
+          'sender': 'x',
+          'text': 'cũ $i',
+          'outgoing': 0,
+          'created': now - 100000 + i,
+        });
+      }
+      await t.insert('handoffs', {'message_id': 'm0', 'node': 'n'});
+    });
+    final p = await signed('mới');
+    await store.save(StoredMessage(p, 'x', 'mới'));
+    expect(
+      (await store.db.rawQuery('SELECT COUNT(*) AS n FROM messages'))
+          .single['n'],
+      maxMessages,
+    );
+    final list = await store.messages();
+    expect(list.first.text, 'mới');
+    expect(list.map((m) => m.text), isNot(contains('cũ 0')));
+    expect(await store.db.query('handoffs'), isEmpty);
   });
 }

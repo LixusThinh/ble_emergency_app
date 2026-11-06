@@ -22,12 +22,22 @@ class StoredMessage {
   });
 }
 
+/// Messages written or changed since a revision, newest first, and the
+/// revision to ask from next time.
+typedef MessageChanges = ({List<StoredMessage> messages, int revision});
+
 abstract interface class MessageStore {
   Future<bool> hasSeen(String id);
   Future<void> retain(Packet packet);
   Future<List<Packet>> pending();
   Future<void> save(StoredMessage message);
+
+  /// The newest [maxMessages] messages, newest first.
   Future<List<StoredMessage>> messages();
+
+  /// Messages saved, acknowledged or handed off after revision [after];
+  /// pass -1 for everything.
+  Future<MessageChanges> changes(int after);
 
   /// Settles packet [id] when [senderId] is its private recipient, on the
   /// origin and on relays alike, so it leaves [pending].
@@ -45,6 +55,9 @@ abstract interface class MessageStore {
   Future<void> close();
 }
 
+/// Messages kept for the UI; older ones are dropped.
+const maxMessages = 2000;
+
 /// Upper bound on remembered contacts; the least recently seen go first.
 const maxContacts = 500;
 
@@ -59,6 +72,8 @@ class MemoryStore implements MessageStore {
   final Set<String> _acked = {};
   final Map<String, (Contact, int)> _contacts = {};
   final Map<String, Set<String>> _handoffs = {};
+  final Map<String, int> _revs = {};
+  int _revision = 0;
   @override
   Future<bool> hasSeen(String id) async => _packets.containsKey(id);
   @override
@@ -89,15 +104,39 @@ class MemoryStore implements MessageStore {
         ..sort((a, b) => a.priority.compareTo(b.priority));
   @override
   Future<void> save(StoredMessage m) async {
-    final kept = _messages.putIfAbsent(m.packet.messageId, () => m);
-    kept.handoffs = _handoffs[m.packet.messageId]?.length ?? 0;
+    final id = m.packet.messageId;
+    if (_messages.containsKey(id)) {
+      return;
+    }
+    _messages[id] = m..handoffs = _handoffs[id]?.length ?? 0;
+    _revs[id] = ++_revision;
+    if (_messages.length > maxMessages) {
+      final oldest = _messages.values.reduce(
+        (a, b) => a.packet.timestamp <= b.packet.timestamp ? a : b,
+      );
+      _messages.remove(oldest.packet.messageId);
+      _revs.remove(oldest.packet.messageId);
+    }
   }
 
   @override
   Future<void> recordHandoff(String id, String node) async {
     final nodes = _handoffs.putIfAbsent(id, () => {})..add(node);
-    _messages[id]?.handoffs = nodes.length;
+    final m = _messages[id];
+    if (m != null) {
+      m.handoffs = nodes.length;
+      _revs[id] = ++_revision;
+    }
   }
+
+  @override
+  Future<MessageChanges> changes(int after) async => (
+    messages: [
+      for (final MapEntry(:key, :value) in _revs.entries)
+        if (value > after) _messages[key]!,
+    ]..sort((a, b) => b.packet.timestamp.compareTo(a.packet.timestamp)),
+    revision: _revision,
+  );
 
   @override
   Future<List<StoredMessage>> messages() async =>
@@ -110,8 +149,9 @@ class MemoryStore implements MessageStore {
       return;
     }
     _acked.add(id);
-    if (m != null && m.outgoing) {
+    if (m != null && m.outgoing && !m.acknowledged) {
       m.acknowledged = true;
+      _revs[id] = ++_revision;
     }
   }
 

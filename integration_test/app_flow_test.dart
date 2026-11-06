@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:ble_emergency_app/main.dart';
+import 'package:ble_emergency_app/core/crypto_worker.dart';
 import 'package:ble_emergency_app/core/identity.dart';
 import 'package:ble_emergency_app/core/packet.dart';
 import 'package:ble_emergency_app/app/settings.dart';
@@ -66,6 +68,27 @@ void main() {
           .id,
       identity.id,
     );
+    // Signature checks run on a background isolate on the phone.
+    final worker = await CryptoWorker.spawn();
+    final probe = await identity.sign(
+      Packet(
+        kind: MessageKind.chat,
+        maxHops: 6,
+        timestamp: DateTime.now().millisecondsSinceEpoch,
+        id: randomBytes(16),
+        signingKey: identity.publicSigning,
+        exchangeKey: identity.publicExchange,
+        recipient: Uint8List(8),
+        payload: MessageBody('kiểm chữ ký').encode(),
+        signature: Uint8List(64),
+      ),
+    );
+    expect(await worker.verify(probe), isTrue);
+    expect(
+      await worker.verify(probe.copy(payload: MessageBody('sửa').encode())),
+      isFalse,
+    );
+    worker.close();
     var store = await SqliteStore.open();
     // On a phone that ran 1.0.0 this open also upgrades the schema.
     expect(await store.db.getVersion(), schemaVersion);
