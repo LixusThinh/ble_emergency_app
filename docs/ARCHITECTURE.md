@@ -22,21 +22,27 @@ MeshTransport
 
 Transport chỉ biết peer, MTU và frame. Router nhận frame, ghép packet, xác minh chữ ký rồi lưu/chuyển tiếp. Simulator dùng chính router, crypto và bộ phân mảnh của ứng dụng, với MemoryStore thay SQLite.
 
-Đánh giá nhiều node từ UI chạy trong Dart isolate riêng để chữ ký/mô phỏng không chặn luồng render. Emulator debug có thể xử lý crypto chậm; script CLI thuận tiện hơn cho benchmark 50–100 node.
+Đánh giá nhiều node từ UI chạy trong Dart isolate riêng để chữ ký/mô phỏng không chặn luồng render. Ở chế độ BLE, chữ ký Ed25519 của gói nhận được (khoảng 3 ms mỗi gói bằng Dart thuần) được kiểm trên một isolate nền (`CryptoWorker`), nên đồng bộ hàng trăm gói không làm đứng giao diện. Ký tin của mình và giải mã tin riêng vẫn chạy trên isolate giao diện (mỗi tin một lần).
 
-## Lưu trữ SQLite (schema v3)
+Giao diện đọc kho theo kiểu tăng dần: một đợt cập nhật dồn dập chỉ tốn một lần đọc đang chạy cộng tối đa một lần đọc nữa, và mỗi lần đọc chỉ trả các tin đã thay đổi. Emulator debug có thể xử lý crypto chậm; script CLI thuận tiện hơn cho benchmark 50–100 node.
+
+## Lưu trữ SQLite (schema v4)
 
 File `emergency_mesh.db` trong sandbox ứng dụng. Mã: `lib/messaging/schema.dart` (schema + migration), `sqlite_store.dart` (tin, gói, danh bạ), `settings_store.dart` (cài đặt).
 
 | Bảng | Nội dung | Giới hạn |
 |---|---|---|
 | `packets` | Gói đã xác minh: chống trùng và hàng chờ store-and-forward; `acked` = đã có ACK hợp lệ | 24 giờ, tối đa 5000; khi đầy bỏ gói đã ACK trước, rồi loại kém khẩn cấp (chat), rồi gói cũ nhất, nên chat tràn không đẩy được SOS ra |
-| `messages` | Inbox/outbox đã giải mã hiển thị trên UI | 2000 tin mới nhất |
+| `messages` | Inbox/outbox đã giải mã hiển thị trên UI | 2000 tin mới nhất (bảng được cắt theo lô khi vượt 2100) |
 | `contacts` (v2) | Node đã gặp: ID, tên tự khai, khóa trao đổi công khai, lần cuối thấy | 500 node gần nhất |
 | `settings` (v2) | Cặp khóa/giá trị: `display_name`, `theme_mode` | — |
 | `handoffs` (v3) | Tin của chính mình đã trao cho máy kề nào (ID tin, ID máy) | Xóa theo tin khi tin bị cắt khỏi `messages` |
 
-Index: `packets(created)`, `packets(acked, priority, created)` cho `pending()`, `messages(created)` cho danh sách tin, `contacts(last_seen)`.
+Cột `messages.rev` (v4): mỗi lần ghi, xác nhận ACK hoặc thêm máy đã nhận đều tăng số phiên bản của tin. Giao diện chỉ đọc các tin có `rev` lớn hơn lần đọc trước (`changes()`), không đọc lại cả 2000 tin.
+
+Index: `packets(created)`, `packets(acked, priority, created)` cho `pending()`, `messages(created)` cho danh sách tin, `messages(rev)` cho `changes()`, `contacts(last_seen)`.
+
+- **Cắt bảng theo lô:** số dòng được giữ trong bộ nhớ, nên mỗi lần ghi không phải sắp xếp lại cả bảng. Khi `packets` chạm 5000 dòng, một lần xóa 100 dòng ít hữu ích nhất; `messages` được cắt về 2000 khi vượt 2100. Gói hết hạn được xóa tối đa mỗi phút một lần (`pending()` vốn đã bỏ qua chúng).
 
 - **Migration:** mỗi phiên bản là một bước trong `_migrations`; cài mới chạy từ bước 1, nâng cấp chạy các bước còn thiếu trong một transaction. Không sửa bước đã phát hành, chỉ thêm bước mới và tăng `schemaVersion`. Hạ phiên bản (cài APK cũ đè lên) không được hỗ trợ.
 - **Kết nối:** WAL và `busy_timeout` 3 giây. Cài đặt dùng một kết nối riêng mở suốt vòng đời app; kho tin mở khi bật mạng và đóng khi tắt mạng, nên đóng kho tin không làm mất cài đặt.
