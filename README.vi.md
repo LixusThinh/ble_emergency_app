@@ -11,7 +11,7 @@ Project dựa trên `BLE_Emergency_App_Huong_Dan.docx`, dành cho đồ án Flut
 - Mỗi máy kề một hàng đợi gửi riêng theo ưu tiên (SOS trước), tách khỏi luồng nhận; hai kết nối tới cùng một máy chỉ gửi mỗi gói một lần; tự thử lại gửi lỗi mỗi 30 giây; đếm số máy kề đã nhận tin của mình.
 - Packet binary, phân mảnh MTU 23 trở lên, ghép lại có giới hạn tài nguyên.
 - Ed25519 ký packet; X25519 + HKDF + AES-GCM cho tin riêng; ACK ký số.
-- SQLite (schema v4, có migration, **mã hóa toàn bộ bằng SQLite3 Multiple Ciphers**, khóa giữ trong Android Keystore) lưu inbox/outbox/dedup, danh bạ đã gặp, máy kề đã nhận tin và cài đặt (tên, giao diện); danh tính lưu qua Android Keystore.
+- SQLite (schema v5, có migration, **mã hóa toàn bộ bằng SQLite3 Multiple Ciphers**, khóa giữ trong Android Keystore) lưu inbox/outbox/dedup, danh bạ đã gặp, máy kề đã nhận tin và cài đặt (tên, giao diện); danh tính lưu qua Android Keystore.
 - Foreground service để duy trì hoạt động trong nền trong cùng process.
 - Demo 3 node A–B–C và simulator tới 100 node, script benchmark.
 
@@ -88,11 +88,11 @@ Tin broadcast chưa có ACK toàn mạng; UI không khẳng định cứu hộ �
 
 Số chặng đã đi (hopCount) không nằm trong chữ ký để relay không cần khóa người gửi. Relay độc hại có thể sửa số này: đặt bằng giới hạn để chặn tin đi tiếp, hoặc hạ xuống để tin đi xa hơn. Giới hạn chặng thì có chữ ký. Vì vậy số chặng hiển thị trên UI không phải bằng chứng về đường đi.
 
-Chữ ký xác nhận khóa nguồn phát, không chứng minh tên/người/cơ quan ngoài đời. Mã hóa tin riêng chưa có forward secrecy; SQLite local đã mã hóa nhưng khóa nằm trong bộ nhớ khi app chạy. Đối chiếu ID trực tiếp trước khi gửi tin nhạy cảm. Xem [kiến trúc](docs/ARCHITECTURE.md) và [kế hoạch kiểm thử](docs/TEST_PLAN.md) để tiếp tục đồ án.
+Chữ ký xác nhận khóa nguồn phát, không chứng minh tên/người/cơ quan ngoài đời. Mã hóa tin riêng chưa có forward secrecy; SQLite local đã mã hóa nhưng khóa nằm trong bộ nhớ khi app chạy. Chống flood bằng hạn mức theo người gửi, tắt tiếng kết nối gửi gói giả và chia đều kho theo người gửi; chưa chống được nhiều khóa giả (Sybil). Đối chiếu ID trực tiếp trước khi gửi tin nhạy cảm. Xem [kiến trúc](docs/ARCHITECTURE.md) và [kế hoạch kiểm thử](docs/TEST_PLAN.md) để tiếp tục đồ án.
 
 Chưa triển khai iOS, bản đồ offline và giao diện điều chỉnh duty cycle. Không dùng số CPU simulator làm số đo latency BLE.
 
-Kết quả hiện tại (07/11/2026): analyzer sạch, 64 test đạt. Integration Android đạt trên emulator Pixel 7 Pro (API 37) sau khi nâng cấp giao diện, database, backend và hiệu năng, kể cả nâng cấp database từ bản 1.0.0 và qua từng phiên bản lên v4; ảnh trong `docs/screenshots/` chụp từ lần chạy này. Xem [kết quả xác minh](docs/VERIFICATION.md).
+Kết quả hiện tại (07/11/2026): analyzer sạch, 77 test đạt. Integration Android đạt trên emulator Pixel 7 Pro (API 37) sau khi nâng cấp giao diện, database, backend và hiệu năng, kể cả nâng cấp database từ bản 1.0.0 và qua từng phiên bản lên v5; ảnh trong `docs/screenshots/` chụp từ lần chạy này. Xem [kết quả xác minh](docs/VERIFICATION.md).
 
 ## Nhóm thực hiện
 
