@@ -9,7 +9,7 @@ Project dựa trên `BLE_Emergency_App_Huong_Dan.docx`, dành cho đồ án Flut
 - Managed flooding, TTL, dedup, store-and-forward khi gặp peer mới/kết nối lại.
 - Packet binary, phân mảnh MTU 23 trở lên, ghép lại có giới hạn tài nguyên.
 - Ed25519 ký packet; X25519 + HKDF + AES-GCM cho tin riêng; ACK ký số.
-- SQLite lưu inbox/outbox/dedup; danh tính lưu qua Android Keystore.
+- SQLite (schema v2, có migration) lưu inbox/outbox/dedup, danh bạ đã gặp và cài đặt (tên, giao diện); danh tính lưu qua Android Keystore.
 - Foreground service để duy trì hoạt động trong nền trong cùng process.
 - Demo 3 node A–B–C và simulator tới 100 node, script benchmark.
 
@@ -90,7 +90,7 @@ Chữ ký xác nhận khóa nguồn phát, không chứng minh tên/người/cơ
 
 Chưa triển khai iOS, bản đồ offline và giao diện điều chỉnh duty cycle. Không dùng số CPU simulator làm số đo latency BLE.
 
-Kết quả hiện tại (06/11/2026): analyzer sạch, 29 test đạt. Integration Android đạt trên emulator Pixel 7 Pro (API 37) sau khi nâng cấp giao diện; ảnh trong `docs/screenshots/` chụp từ lần chạy này. Xem [kết quả xác minh](docs/VERIFICATION.md).
+Kết quả hiện tại (06/11/2026): analyzer sạch, 36 test đạt. Integration Android đạt trên emulator Pixel 7 Pro (API 37) sau khi nâng cấp giao diện và database, kể cả nâng cấp database từ bản 1.0.0; ảnh trong `docs/screenshots/` chụp từ lần chạy này. Xem [kết quả xác minh](docs/VERIFICATION.md).
 
 ## Nhóm thực hiện
 
