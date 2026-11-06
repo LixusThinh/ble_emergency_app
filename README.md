@@ -14,7 +14,7 @@ Flutter + Kotlin · Android 8.0 trở lên (API 26) · Đồ án môn học
 
 ### 1. Khẩn cấp
 - **Nút SOS** phát tín hiệu cầu cứu tới mọi thiết bị trong mạng, **kèm tọa độ GPS** nếu có. Nếu sau 12 giây chưa lấy được GPS, SOS vẫn được gửi và ứng dụng báo rõ là không kèm vị trí.
-- **Mô tả nhanh tình trạng** bằng các nút chọn sẵn: *Bị thương*, *Bị mắc kẹt*, *Cần nước uống*, *Cần thuốc*, hoặc tự gõ (tối đa 250 ký tự).
+- **Mô tả nhanh tình trạng** bằng các nút chọn sẵn (bật/tắt): *Bị thương*, *Bị mắc kẹt*, *Cần nước uống*, *Cần thuốc*, kèm ghi chú tự gõ (tối đa 200 ký tự). Hộp thoại hiện trước đúng nội dung sẽ gửi.
 - **Cảnh báo SOS trên máy nhận:** hộp cảnh báo đỏ kèm rung, hiện tên người gửi, nội dung, số chặng đã đi, tọa độ GPS và nút sao chép tọa độ.
 - **"Tôi an toàn":** báo cho cả mạng biết mình đã an toàn chỉ bằng một chạm.
 - SOS được **ưu tiên gửi trước** mọi loại tin khác khi đồng bộ với máy mới gặp.
@@ -25,7 +25,8 @@ Flutter + Kotlin · Android 8.0 trở lên (API 26) · Đồ án môn học
 - **Xác nhận đã nhận (ACK) cho tin riêng:** trạng thái đổi từ ⏱ *Đang chờ xác nhận* sang ✓✓ *Người nhận đã xác nhận*. ACK được ký số và chỉ được chấp nhận khi đến từ đúng người nhận.
 - **Hiện đúng tên người gửi** kể cả khi họ cách nhiều chặng.
 - Mỗi tin nhận được ghi **số chặng đã đi** và trạng thái chữ ký hợp lệ.
-- Giao diện chat dạng bong bóng; chọn người nhận bằng các chip ngay trên khung chat.
+- Giao diện chat dạng bong bóng, **tách theo cuộc trò chuyện**: chip *Toàn mạng* chỉ hiện kênh chung (SOS, an toàn, tin công khai); chip tên một người chỉ hiện tin riêng với người đó. Tin được nhóm theo ngày (*Hôm nay*, *Hôm qua*, ngày cụ thể).
+- **Giao diện sáng/tối** theo cài đặt hệ thống; nhãn trạng thái mạng ở đầu màn hình bấm được để mở danh sách thiết bị; hỗ trợ TalkBack cho nút SOS, tiêu đề và cảnh báo.
 
 ### 3. Mạng mesh và lưu chờ chuyển tiếp
 - **Hai vai trò BLE cùng lúc:** mỗi máy vừa quảng bá như máy chủ GATT (peripheral), vừa quét và chủ động kết nối (central), nên không cần máy nào làm trung tâm.
@@ -119,8 +120,8 @@ docs/              Kiến trúc, kế hoạch kiểm thử, kết quả xác min
 ## Kiểm thử
 
 - `flutter analyze`: không có lỗi.
-- `flutter test`: **21/21 test đạt**. Các test gồm: ký và chống sửa gói, phân mảnh MTU 23, chuyển tiếp A–B–C, chống trùng trên mạng tam giác, lưu chờ chuyển tiếp, ACK, gói giả mạo, ưu tiên SOS, tên người gửi qua nhiều chặng, gộp kết nối trùng, giao diện trên màn hình nhỏ.
-- Integration test trên Android đạt ở bản ngày 06/10/2026, **chưa chạy lại** sau khi làm lại giao diện.
+- `flutter test`: **29/29 test đạt**. Các test gồm: ký và chống sửa gói, phân mảnh MTU 23, chuyển tiếp A–B–C, chống trùng trên mạng tam giác, lưu chờ chuyển tiếp, ACK, gói giả mạo, ưu tiên SOS, tên người gửi qua nhiều chặng, gộp kết nối trùng, giao diện trên màn hình nhỏ, giao diện tối, lọc tin theo cuộc trò chuyện, soạn SOS, nhãn ngày.
+- Integration test trên Android (emulator Pixel 7 Pro, API 37) **đạt ngày 06/11/2026** sau khi nâng cấp giao diện; ảnh trong `docs/screenshots/` chụp từ lần chạy này.
 - **BLE trên điện thoại thật chưa được kiểm chứng.** Kế hoạch đo nằm ở [docs/TEST_PLAN.md](docs/TEST_PLAN.md).
 
 ## Giới hạn

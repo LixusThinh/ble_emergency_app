@@ -2,6 +2,18 @@
 
 Nhóm thực hiện: **Trần Gia Thịnh** (nhóm trưởng, 2380602136), Đỗ Minh Quang (2380601802), Nguyễn Thanh Hải (1911065203), Hồ Uy Thiện (2380602107).
 
+## Cập nhật 06/11/2026 — nâng cấp giao diện (nhánh `feat/ux-ui`)
+
+| Kiểm tra | Kết quả |
+|---|---|
+| `flutter analyze` | Không có issue |
+| `flutter test` | 29 test đạt (21 cũ + 8 mới: giao diện tối, lọc tin theo cuộc trò chuyện, soạn SOS, nhãn ngày, nhãn trạng thái mở tab Thiết bị) |
+| Android integration | Đạt trên emulator Pixel 7 Pro / API 37; ảnh `screenshots/` chụp lại từ lần chạy này (giao diện sáng) |
+
+Hai lỗi giao diện tìm thấy khi chạy integration và đã sửa: thông báo nổi "Đã phát SOS" che nút gửi tin sau khi chuyển tab (nay tự ẩn khi đổi tab); ô thống kê ở tab Đánh giá tràn 4.7 px trên Pixel 7 Pro (đổi tỉ lệ ô lưới). Giao diện tối chỉ được kiểm bằng widget test, chưa chụp ảnh.
+
+## Kết quả 06/10/2026
+
 Môi trường: Windows, Flutter 3.47.4 stable / Dart 3.13.3, Android Studio JBR, emulator Pixel 7 Pro / Android API 37.
 
 | Kiểm tra | Kết quả |

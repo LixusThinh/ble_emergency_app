@@ -90,7 +90,7 @@ Chữ ký xác nhận khóa nguồn phát, không chứng minh tên/người/cơ
 
 Chưa triển khai iOS, bản đồ offline và giao diện điều chỉnh duty cycle. Không dùng số CPU simulator làm số đo latency BLE.
 
-Kết quả hiện tại (18/10/2026): analyzer sạch, 21 test đạt. Integration Android đạt ở bản 06/10/2026, chưa chạy lại sau khi làm lại giao diện; ảnh trong `docs/screenshots/` vẫn là giao diện cũ. Xem [kết quả xác minh](docs/VERIFICATION.md).
+Kết quả hiện tại (06/11/2026): analyzer sạch, 29 test đạt. Integration Android đạt trên emulator Pixel 7 Pro (API 37) sau khi nâng cấp giao diện; ảnh trong `docs/screenshots/` chụp từ lần chạy này. Xem [kết quả xác minh](docs/VERIFICATION.md).
 
 ## Nhóm thực hiện
 
