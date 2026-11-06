@@ -1,17 +1,14 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import '../core/contact.dart';
 import '../core/identity.dart';
 import '../core/packet.dart';
 import '../messaging/store.dart';
 import '../transport/fragments.dart';
 import '../transport/transport.dart';
 
-class Contact {
-  final String id, name;
-  final Uint8List exchangeKey;
-  Contact(this.id, this.name, this.exchangeKey);
-}
+export '../core/contact.dart';
 
 class RouterStats {
   int received = 0, relayed = 0, duplicate = 0, rejected = 0, sentFrames = 0;
@@ -30,6 +27,7 @@ class MeshRouter {
   final Map<String, Set<String>> _sent = {};
   final Map<String, String> _peerNodes = {};
   final Set<String> _links = {};
+  final Map<String, int> _contactSaved = {};
   Future<void> _work = Future.value();
   StreamSubscription<TransportEvent>? _subscription;
   String? lastError;
@@ -50,6 +48,15 @@ class MeshRouter {
   }
 
   Future<void> start() async {
+    // Remembered contacts first, so names and private chats work before the
+    // other phone says hello again.
+    try {
+      for (final c in await store.contacts()) {
+        contacts.putIfAbsent(c.id, () => c);
+      }
+    } catch (e) {
+      lastError = 'Không đọc được danh bạ đã lưu: $e';
+    }
     _subscription = transport.events.listen((e) {
       _work = _work.then((_) => _event(e)).catchError((Object error) {
         lastError = '$error';
@@ -194,7 +201,7 @@ class MeshRouter {
         _peerNodes[via] = sender;
       }
     }
-    contacts[sender] = Contact(sender, contactName, p.exchangeKey);
+    await _remember(sender, contactName, p.exchangeKey);
     await store.retain(p);
     stats.received++;
     final forMe = !p.broadcast && hex(p.recipient) == identity.id;
@@ -215,7 +222,7 @@ class MeshRouter {
           : p.payload;
       final body = MessageBody.decode(clear);
       if (body.sender != null && body.sender!.trim().isNotEmpty) {
-        contacts[sender] = Contact(sender, body.sender!.trim(), p.exchangeKey);
+        await _remember(sender, body.sender!.trim(), p.exchangeKey);
       }
       await store.save(
         StoredMessage(
@@ -235,6 +242,23 @@ class MeshRouter {
         await store.retain(ack);
         await _broadcast(ack);
       }
+    }
+  }
+
+  /// Updates the in-memory contact and persists it when it is new, its name
+  /// or key changed, or its last-seen time is more than a minute stale.
+  Future<void> _remember(String id, String name, Uint8List key) async {
+    final previous = contacts[id];
+    final contact = Contact(id, name, key);
+    contacts[id] = contact;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final changed =
+        previous == null ||
+        previous.name != name ||
+        hex(previous.exchangeKey) != hex(key);
+    if (changed || now - (_contactSaved[id] ?? 0) > 60000) {
+      _contactSaved[id] = now;
+      await store.saveContact(contact, now);
     }
   }
 

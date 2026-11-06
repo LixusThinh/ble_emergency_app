@@ -1,3 +1,4 @@
+import '../core/contact.dart';
 import '../core/packet.dart';
 
 class StoredMessage {
@@ -27,13 +28,23 @@ abstract interface class MessageStore {
   /// Settles packet [id] when [senderId] is its private recipient, on the
   /// origin and on relays alike, so it leaves [pending].
   Future<void> acknowledge(String id, String senderId);
+
+  /// Known nodes, most recently seen first.
+  Future<List<Contact>> contacts();
+
+  /// Inserts or updates [contact], seen at [seen] (epoch ms).
+  Future<void> saveContact(Contact contact, int seen);
   Future<void> close();
 }
+
+/// Upper bound on remembered contacts; the least recently seen go first.
+const maxContacts = 500;
 
 class MemoryStore implements MessageStore {
   final Map<String, Packet> _packets = {};
   final Map<String, StoredMessage> _messages = {};
   final Set<String> _acked = {};
+  final Map<String, (Contact, int)> _contacts = {};
   @override
   Future<bool> hasSeen(String id) async => _packets.containsKey(id);
   @override
@@ -69,6 +80,22 @@ class MemoryStore implements MessageStore {
     _acked.add(id);
     if (m != null && m.outgoing) {
       m.acknowledged = true;
+    }
+  }
+
+  @override
+  Future<List<Contact>> contacts() async =>
+      (_contacts.values.toList()..sort((a, b) => b.$2.compareTo(a.$2)))
+          .map((e) => e.$1)
+          .toList();
+  @override
+  Future<void> saveContact(Contact contact, int seen) async {
+    _contacts[contact.id] = (contact, seen);
+    if (_contacts.length > maxContacts) {
+      final oldest = _contacts.entries.reduce(
+        (a, b) => a.value.$2 <= b.value.$2 ? a : b,
+      );
+      _contacts.remove(oldest.key);
     }
   }
 
