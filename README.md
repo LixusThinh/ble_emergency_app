@@ -17,7 +17,8 @@ Flutter + Kotlin · Android 8.0 trở lên (API 26) · Đồ án môn học
 - **Mô tả nhanh tình trạng** bằng các nút chọn sẵn (bật/tắt): *Bị thương*, *Bị mắc kẹt*, *Cần nước uống*, *Cần thuốc*, kèm ghi chú tự gõ (tối đa 200 ký tự). Hộp thoại hiện trước đúng nội dung sẽ gửi.
 - **Cảnh báo SOS trên máy nhận:** hộp cảnh báo đỏ kèm rung, hiện tên người gửi, nội dung, số chặng đã đi, tọa độ GPS và nút sao chép tọa độ.
 - **"Tôi an toàn":** báo cho cả mạng biết mình đã an toàn chỉ bằng một chạm.
-- SOS được **ưu tiên gửi trước** mọi loại tin khác khi đồng bộ với máy mới gặp.
+- SOS được **ưu tiên gửi trước** mọi loại tin khác, kể cả khi đang đồng bộ tồn đọng với máy khác.
+- Dưới tin mình gửi có dòng **"Chưa đến máy nào" / "Đã đến N máy gần"**, để biết SOS đã thực sự rời khỏi máy chưa.
 
 ### 2. Nhắn tin
 - **Tin công khai** gửi tới toàn mạng.
@@ -36,6 +37,8 @@ Flutter + Kotlin · Android 8.0 trở lên (API 26) · Đồ án môn học
 - **Thứ tự ưu tiên khi đồng bộ:** SOS → ACK → "Tôi an toàn" → chat.
 - **Phân mảnh gói tin** theo MTU của từng kết nối (23–185 byte) và ghép lại ở máy nhận, có giới hạn bộ nhớ và thời gian chờ.
 - Khi thấy ACK hợp lệ, mọi máy đang giữ tin riêng đó, kể cả máy trung gian, đều ngừng chuyển tiếp nó.
+- **Mỗi máy kề một hàng đợi gửi riêng:** đồng bộ tồn đọng cho một máy không làm chậm việc nhận tin từ máy khác. Hai kết nối tới cùng một điện thoại chỉ gửi mỗi gói một lần (trước đây gửi hai lần và dội ngược lại). Gửi lỗi được tự thử lại mỗi 30 giây mà không cần ngắt kết nối.
+- Kho 5000 gói khi đầy bỏ gói đã xác nhận và tin chat trước, **giữ SOS** lại để tiếp tục chuyển tiếp.
 
 ### 4. Thiết bị trong mạng
 - Danh sách **kết nối trực tiếp** kèm cường độ tín hiệu (RSSI, cột sóng), mức tín hiệu và MTU.
@@ -121,8 +124,8 @@ docs/              Kiến trúc, kế hoạch kiểm thử, kết quả xác min
 ## Kiểm thử
 
 - `flutter analyze`: không có lỗi.
-- `flutter test`: **36/36 test đạt** (trong đó 6 test chạy SQLite thật qua FFI: migration từ bản 1.0.0, danh bạ, cài đặt, khôi phục danh bạ sau khởi động lại). Các test gồm: ký và chống sửa gói, phân mảnh MTU 23, chuyển tiếp A–B–C, chống trùng trên mạng tam giác, lưu chờ chuyển tiếp, ACK, gói giả mạo, ưu tiên SOS, tên người gửi qua nhiều chặng, gộp kết nối trùng, giao diện trên màn hình nhỏ, giao diện tối, lọc tin theo cuộc trò chuyện, soạn SOS, nhãn ngày.
-- Integration test trên Android (emulator Pixel 7 Pro, API 37) **đạt ngày 06/11/2026** sau khi nâng cấp giao diện; ảnh trong `docs/screenshots/` chụp từ lần chạy này.
+- `flutter test`: **47/47 test đạt** (trong đó 8 test chạy SQLite thật qua FFI: migration từ bản 1.0.0, danh bạ, cài đặt, khôi phục danh bạ sau khởi động lại, đếm máy đã nhận, thứ tự bỏ gói khi đầy; 9 test router: hai kết nối một máy, SOS không bị kẹt sau tồn đọng, thử lại khi gửi lỗi, không gửi ngược, kết nối không chào hỏi). Các test gồm: ký và chống sửa gói, phân mảnh MTU 23, chuyển tiếp A–B–C, chống trùng trên mạng tam giác, lưu chờ chuyển tiếp, ACK, gói giả mạo, ưu tiên SOS, tên người gửi qua nhiều chặng, gộp kết nối trùng, giao diện trên màn hình nhỏ, giao diện tối, lọc tin theo cuộc trò chuyện, soạn SOS, nhãn ngày.
+- Integration test trên Android (emulator Pixel 7 Pro, API 37) **đạt ngày 06/11/2026** sau khi nâng cấp backend, kể cả nâng cấp database v2 → v3 giữ nguyên dữ liệu; ảnh trong `docs/screenshots/` chụp từ lần chạy này.
 - **BLE trên điện thoại thật chưa được kiểm chứng.** Kế hoạch đo nằm ở [docs/TEST_PLAN.md](docs/TEST_PLAN.md).
 
 ## Giới hạn
