@@ -6,6 +6,9 @@ class StoredMessage {
   final String senderId, text;
   final bool outgoing;
   bool acknowledged;
+
+  /// Distinct nearby phones this phone handed an outgoing message to.
+  int handoffs;
   final double? latitude, longitude;
   StoredMessage(
     this.packet,
@@ -13,6 +16,7 @@ class StoredMessage {
     this.text, {
     this.outgoing = false,
     this.acknowledged = false,
+    this.handoffs = 0,
     this.latitude,
     this.longitude,
   });
@@ -34,24 +38,45 @@ abstract interface class MessageStore {
 
   /// Inserts or updates [contact], seen at [seen] (epoch ms).
   Future<void> saveContact(Contact contact, int seen);
+
+  /// Records that neighbour [node] received our message [id]; counted once
+  /// per node in [StoredMessage.handoffs].
+  Future<void> recordHandoff(String id, String node);
   Future<void> close();
 }
 
 /// Upper bound on remembered contacts; the least recently seen go first.
 const maxContacts = 500;
 
+/// Upper bound on retained packets. When full, settled (ACKed) packets go
+/// first, then the least urgent kind, then the oldest, so a flood of chat
+/// cannot push an SOS out of store-and-forward.
+const maxPackets = 5000;
+
 class MemoryStore implements MessageStore {
   final Map<String, Packet> _packets = {};
   final Map<String, StoredMessage> _messages = {};
   final Set<String> _acked = {};
   final Map<String, (Contact, int)> _contacts = {};
+  final Map<String, Set<String>> _handoffs = {};
   @override
   Future<bool> hasSeen(String id) async => _packets.containsKey(id);
   @override
   Future<void> retain(Packet p) async {
+    if (_packets.containsKey(p.messageId)) {
+      return;
+    }
     _packets.removeWhere((_, p) => p.expired);
-    if (_packets.length >= 5000) {
-      _packets.remove(_packets.keys.first);
+    if (_packets.length >= maxPackets) {
+      // Same order as SqliteStore: acked, then priority, then age.
+      (bool, int, int) rank(Packet v) =>
+          (_acked.contains(v.messageId), v.priority, -v.timestamp);
+      bool before((bool, int, int) a, (bool, int, int) b) =>
+          a.$1 != b.$1 ? a.$1 : (a.$2 != b.$2 ? a.$2 > b.$2 : a.$3 > b.$3);
+      final victim = _packets.values.reduce(
+        (a, b) => before(rank(b), rank(a)) ? b : a,
+      );
+      _packets.remove(victim.messageId);
     }
     _packets[p.messageId] = p;
   }
@@ -64,7 +89,14 @@ class MemoryStore implements MessageStore {
         ..sort((a, b) => a.priority.compareTo(b.priority));
   @override
   Future<void> save(StoredMessage m) async {
-    _messages[m.packet.messageId] = m;
+    final kept = _messages.putIfAbsent(m.packet.messageId, () => m);
+    kept.handoffs = _handoffs[m.packet.messageId]?.length ?? 0;
+  }
+
+  @override
+  Future<void> recordHandoff(String id, String node) async {
+    final nodes = _handoffs.putIfAbsent(id, () => {})..add(node);
+    _messages[id]?.handoffs = nodes.length;
   }
 
   @override

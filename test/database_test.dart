@@ -61,6 +61,7 @@ void main() {
       'messages',
       'contacts',
       'settings',
+      'handoffs',
     });
     expect(
       await objects(db, 'index'),
@@ -211,5 +212,61 @@ void main() {
     expect(restored?.name, 'Bình');
     expect(restored?.exchangeKey, b.identity.publicExchange);
     await b.dispose();
+  });
+
+  test('handoffs count distinct phones and survive reopen', () async {
+    var store = await SqliteStore.open(factory: factory, file: file);
+    final p = await signed('ai nhận được?');
+    await store.save(StoredMessage(p, 'me', 'ai nhận được?', outgoing: true));
+    expect((await store.messages()).single.handoffs, 0);
+    await store.recordHandoff(p.messageId, 'b');
+    await store.recordHandoff(p.messageId, 'c');
+    await store.recordHandoff(p.messageId, 'b');
+    await store.close();
+    store = await SqliteStore.open(factory: factory, file: file);
+    addTearDown(store.close);
+    expect((await store.messages()).single.handoffs, 2);
+  });
+
+  test('a full packet table drops settled, then chat, before SOS', () async {
+    final store = await SqliteStore.open(factory: factory, file: file);
+    addTearDown(store.close);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    Map<String, Object> row(
+      String id,
+      MessageKind kind,
+      int created, {
+      bool acked = false,
+    }) => {
+      'id': id,
+      'bytes': Uint8List(0),
+      'created': created,
+      'priority': kind == MessageKind.sos ? 0 : 4,
+      'acked': acked ? 1 : 0,
+    };
+    await store.db.transaction((t) async {
+      await t.insert('packets', row('sos-cu', MessageKind.sos, now - 7200000));
+      await t.insert(
+        'packets',
+        row('da-xong', MessageKind.chat, now, acked: true),
+      );
+      for (var i = 0; i < maxPackets - 2; i++) {
+        await t.insert('packets', row('chat$i', MessageKind.chat, now - i));
+      }
+    });
+    final p = await signed('mới');
+    await store.retain(p);
+    final ids = {
+      for (final r in await store.db.query('packets', columns: ['id']))
+        r['id'] as String,
+    };
+    expect(ids, hasLength(maxPackets));
+    expect(ids, containsAll(['sos-cu', p.messageId]));
+    expect(ids, isNot(contains('da-xong')));
+    await store.retain(await signed('mới nữa'));
+    final after = await store.db.query('packets', columns: ['id']);
+    expect(after.map((r) => r['id']), contains('sos-cu'));
+    // The oldest chat goes once nothing settled is left.
+    expect(after.map((r) => r['id']), isNot(contains('chat${maxPackets - 3}')));
   });
 }
