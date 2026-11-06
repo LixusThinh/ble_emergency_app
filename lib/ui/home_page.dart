@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../app/controller.dart';
+import '../app/settings.dart';
 import '../core/packet.dart';
 import 'chat_tab.dart';
 import 'emergency_tab.dart';
@@ -14,7 +15,8 @@ import 'theme.dart';
 import 'widgets.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  final AppSettings settings;
+  const HomePage({super.key, required this.settings});
   @override
   State<HomePage> createState() => _HomePageState();
 }
@@ -22,7 +24,7 @@ class HomePage extends StatefulWidget {
 /// Holds navigation state only; the header and the visible tab rebuild from
 /// [AppController] through a ListenableBuilder, the navigation bar does not.
 class _HomePageState extends State<HomePage> {
-  final c = AppController();
+  late final c = AppController(settings: widget.settings);
   final input = TextEditingController();
   int tab = 0;
   String? recipientId;

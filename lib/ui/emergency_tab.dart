@@ -168,8 +168,8 @@ class _JoinCard extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           TextFormField(
-            initialValue: c.name == 'Người dùng' ? '' : c.name,
-            onChanged: (v) => c.name = v,
+            initialValue: c.settings.name,
+            onChanged: (v) => c.settings.name = v,
             maxLength: 40,
             textCapitalization: TextCapitalization.words,
             decoration: const InputDecoration(

@@ -10,13 +10,20 @@ import '../messaging/store.dart';
 import '../routing/router.dart';
 import '../simulator/network.dart';
 import '../transport/android_ble.dart';
+import 'settings.dart';
 
 class AppController extends ChangeNotifier {
   MeshRouter? router;
   List<StoredMessage> messages = [];
   bool busy = false, demo = false;
   String? error;
-  String name = 'Người dùng';
+  final AppSettings settings;
+  AppController({AppSettings? settings})
+    : settings = settings ?? AppSettings.memory();
+
+  /// Name shown to other phones; falls back when the user left it empty.
+  String get name =>
+      settings.name.trim().isEmpty ? 'Người dùng' : settings.name.trim();
 
   /// Incoming SOS that arrived after the network started; the UI pops each one.
   final List<StoredMessage> sosAlerts = [];
@@ -112,7 +119,7 @@ class AppController extends ChangeNotifier {
           identity: identity,
           transport: AndroidBleTransport(),
           store: await SqliteStore.open(),
-          name: name.trim().isEmpty ? 'Người dùng' : name.trim(),
+          name: name,
         );
         _updates = router!.updates.listen((_) {
           unawaited(_refresh());
