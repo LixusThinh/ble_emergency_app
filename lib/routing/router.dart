@@ -59,12 +59,17 @@ class MeshRouter {
   final String name;
   final bool deduplicate;
 
-  /// How often live neighbours are offered pending packets again, so a failed
-  /// send does not wait for the next reconnect. Null disables the timer.
+  /// How often live neighbours are offered pending packets again after a
+  /// failed send, so it does not wait for the next reconnect. Null disables
+  /// the timer.
   final Duration? retryInterval;
 
   /// A link that has not said hello by then is synced as its own neighbour.
   final Duration helloTimeout;
+
+  /// Signature check for received packets; a [CryptoWorker] keeps it off the
+  /// UI isolate. Defaults to [Identity.verify] on the calling isolate.
+  final Future<bool> Function(Packet) verify;
   final stats = RouterStats();
   final contacts = <String, Contact>{};
   final _updates = StreamController<void>.broadcast();
@@ -91,6 +96,7 @@ class MeshRouter {
   Future<void> _work = Future.value();
   StreamSubscription<TransportEvent>? _subscription;
   Timer? _retry;
+  int _failuresRetried = 0;
   String? lastError;
   bool running = false;
   MeshRouter({
@@ -101,7 +107,8 @@ class MeshRouter {
     this.deduplicate = true,
     this.retryInterval = const Duration(seconds: 30),
     this.helloTimeout = const Duration(seconds: 5),
-  });
+    Future<bool> Function(Packet)? verifier,
+  }) : verify = verifier ?? Identity.verify;
   Stream<void> get updates => _updates.stream;
 
   /// Completes once received events are handled and outboxes are drained.
@@ -157,7 +164,10 @@ class MeshRouter {
       final every = retryInterval;
       if (every != null) {
         _retry = Timer.periodic(every, (_) {
-          if (running) {
+          // Only failures leave packets unoffered on a live link; skip the
+          // full pending() read when nothing failed since the last retry.
+          if (running && stats.failedSends != _failuresRetried) {
+            _failuresRetried = stats.failedSends;
             _track(resync());
           }
         });
@@ -335,7 +345,7 @@ class MeshRouter {
     if (p.expired ||
         p.timestamp > DateTime.now().millisecondsSinceEpoch + 300000 ||
         p.hops < 1 ||
-        !await Identity.verify(p)) {
+        !await verify(p)) {
       stats.rejected++;
       return;
     }

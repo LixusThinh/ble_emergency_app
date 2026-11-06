@@ -2,6 +2,29 @@
 
 Nhóm thực hiện: **Trần Gia Thịnh** (nhóm trưởng, 2380602136), Đỗ Minh Quang (2380601802), Nguyễn Thanh Hải (1911065203), Hồ Uy Thiện (2380602107).
 
+## Cập nhật 07/11/2026 — nâng cấp hiệu năng (nhánh `feat/performance`)
+
+| Kiểm tra | Kết quả |
+|---|---|
+| `flutter analyze` | Không có issue |
+| `flutter test` | 57 test đạt (47 trước đó + 4 test controller: gộp lần đọc, đọc tăng dần, khớp với đọc toàn bộ, cảnh báo SOS một lần + 4 test isolate kiểm chữ ký + 2 test SQLite: `changes()` theo revision, cắt bảng tin theo lô) |
+| Android integration | Đạt; thêm bước kiểm chữ ký bằng isolate nền ngay trên máy (gói thật → đúng, gói bị sửa → sai) |
+| Nâng cấp v3 → v4 trên emulator | Đạt. DB trên máy từ lần chạy trước ở `user_version` 3; sau khi cài bản mới: `user_version` 4, có cột `messages.rev` và index `messages_rev`, tin cũ "TIN TỪ BẢN 1.0.0" vẫn còn (rev 0, vẫn được `changes(-1)` đọc) |
+
+Đo bằng `flutter test benchmark/perf_test.dart`, mỗi phần chạy riêng trên máy tính (Dart JIT). Số liệu dùng để so sánh hai phiên bản, không phải thời gian trên điện thoại.
+
+| Đo | Trước | Sau |
+|---|---:|---:|
+| Số dòng tin đọc từ kho khi có 200 cập nhật liên tiếp | 55 843 | 400 |
+| Ghi một gói khi bảng `packets` đầy (5000 dòng) | 5,5 ms | 1,2 ms |
+| Ghi một tin khi bảng `messages` đầy | 1,6 ms | 0,8 ms |
+| Ghép gói 4 KB ở MTU 23 (533 frame) | 3,3 ms | 2,0 ms |
+| `Packet.messageId` | 1,03 µs | 0,007 µs |
+| `hex()` 16 byte | 1,39 µs | 0,49 µs |
+| Thời gian rảnh của isolate giao diện khi kiểm 200 chữ ký | 0% | 94% |
+
+400 dòng = mỗi tin được đọc hai lần: khi lưu và khi máy kề nhận nó (số "đã đến N máy" đổi). Trong phép đo này mỗi lần đọc xong trước cập nhật kế tiếp nên số lần đọc vẫn là 400; khi cập nhật đến trong lúc đang đọc, 50 cập nhật chỉ tốn 2 lần đọc (test `controller_test.dart`). Không đổi: ký Ed25519 khoảng 3,5 ms mỗi tin; CPU mô phỏng router vẫn chủ yếu do chữ ký. Chưa đo trên điện thoại thật.
+
 ## Cập nhật 06/11/2026 — nâng cấp backend (nhánh `feat/backend`)
 
 | Kiểm tra | Kết quả |

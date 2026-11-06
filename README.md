@@ -57,6 +57,7 @@ Flutter + Kotlin · Android 8.0 trở lên (API 26) · Đồ án môn học
 - **Foreground service:** mạng tiếp tục hoạt động khi tắt màn hình hoặc chuyển sang ứng dụng khác (có thông báo thường trực).
 - **SQLite** lưu hộp thư đến, tin chờ gửi, bảng chống trùng, **danh bạ** các máy đã gặp và **cài đặt** (tên hiển thị, giao diện sáng/tối). Mở lại ứng dụng vẫn còn tin, tên của mọi người và có thể nhắn riêng ngay mà không cần chờ gặp lại.
 - Database có **đánh số phiên bản và migration**: bản cập nhật nâng schema tại chỗ, giữ nguyên dữ liệu cũ.
+- **Hiệu năng:** giao diện chỉ đọc lại những tin vừa thay đổi thay vì cả 2000 tin; chữ ký của gói nhận được kiểm trên một isolate nền nên đồng bộ hàng trăm gói không làm đứng màn hình; bảng đầy được cắt theo lô thay vì sắp xếp lại mỗi lần ghi. Số đo trước/sau trong [VERIFICATION.md](docs/VERIFICATION.md), đo lại bằng `flutter test benchmark/perf_test.dart`.
 - Xin quyền đúng theo phiên bản Android: *Thiết bị lân cận* (12+), *Vị trí* (11 trở xuống), *Thông báo* (13+), GPS khi gửi SOS.
 
 ### 7. Mô phỏng và đánh giá
@@ -124,8 +125,8 @@ docs/              Kiến trúc, kế hoạch kiểm thử, kết quả xác min
 ## Kiểm thử
 
 - `flutter analyze`: không có lỗi.
-- `flutter test`: **47/47 test đạt** (trong đó 8 test chạy SQLite thật qua FFI: migration từ bản 1.0.0, danh bạ, cài đặt, khôi phục danh bạ sau khởi động lại, đếm máy đã nhận, thứ tự bỏ gói khi đầy; 9 test router: hai kết nối một máy, SOS không bị kẹt sau tồn đọng, thử lại khi gửi lỗi, không gửi ngược, kết nối không chào hỏi). Các test gồm: ký và chống sửa gói, phân mảnh MTU 23, chuyển tiếp A–B–C, chống trùng trên mạng tam giác, lưu chờ chuyển tiếp, ACK, gói giả mạo, ưu tiên SOS, tên người gửi qua nhiều chặng, gộp kết nối trùng, giao diện trên màn hình nhỏ, giao diện tối, lọc tin theo cuộc trò chuyện, soạn SOS, nhãn ngày.
-- Integration test trên Android (emulator Pixel 7 Pro, API 37) **đạt ngày 06/11/2026** sau khi nâng cấp backend, kể cả nâng cấp database v2 → v3 giữ nguyên dữ liệu; ảnh trong `docs/screenshots/` chụp từ lần chạy này.
+- `flutter test`: **57/57 test đạt** (trong đó 10 test chạy SQLite thật qua FFI: migration từ bản 1.0.0, danh bạ, cài đặt, khôi phục danh bạ sau khởi động lại, đếm máy đã nhận, thứ tự bỏ gói khi đầy, đọc tin theo revision, cắt bảng tin; 9 test router: hai kết nối một máy, SOS không bị kẹt sau tồn đọng, thử lại khi gửi lỗi, không gửi ngược, kết nối không chào hỏi; 4 test isolate kiểm chữ ký; 4 test controller: gộp và đọc tăng dần). Các test gồm: ký và chống sửa gói, phân mảnh MTU 23, chuyển tiếp A–B–C, chống trùng trên mạng tam giác, lưu chờ chuyển tiếp, ACK, gói giả mạo, ưu tiên SOS, tên người gửi qua nhiều chặng, gộp kết nối trùng, giao diện trên màn hình nhỏ, giao diện tối, lọc tin theo cuộc trò chuyện, soạn SOS, nhãn ngày.
+- Integration test trên Android (emulator Pixel 7 Pro, API 37) **đạt ngày 07/11/2026** sau khi nâng cấp hiệu năng, kể cả nâng cấp database v3 → v4 giữ nguyên dữ liệu; ảnh trong `docs/screenshots/` chụp từ lần chạy này.
 - **BLE trên điện thoại thật chưa được kiểm chứng.** Kế hoạch đo nằm ở [docs/TEST_PLAN.md](docs/TEST_PLAN.md).
 
 ## Giới hạn

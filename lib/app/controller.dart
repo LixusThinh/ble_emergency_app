@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
+import '../core/crypto_worker.dart';
 import '../core/identity.dart';
 import '../core/packet.dart';
 import '../messaging/sqlite_store.dart';
@@ -27,37 +28,113 @@ class AppController extends ChangeNotifier {
 
   /// Incoming SOS that arrived after the network started; the UI pops each one.
   final List<StoredMessage> sosAlerts = [];
-  final Set<String> _known = {};
   bool _primed = false;
   SimNetwork? _network;
   final List<MeshRouter> _demoRouters = [];
   StreamSubscription<void>? _updates;
-  Future<void> _refreshWork = Future.value();
+
+  /// Spawned on the first BLE start and kept for the life of the app.
+  CryptoWorker? _worker;
+  bool _workerFailed = false;
+  Future<CryptoWorker?> _cryptoWorker() async {
+    if (_worker == null && !_workerFailed) {
+      try {
+        _worker = await CryptoWorker.spawn();
+      } catch (e) {
+        // Verifying on this isolate is slower but still correct.
+        _workerFailed = true;
+        debugPrint('Không tạo được isolate kiểm chữ ký: $e');
+      }
+    }
+    return _worker;
+  }
+
+  /// [messages] by id, and the store revision they reflect.
+  final Map<String, StoredMessage> _byId = {};
+  int _revision = -1;
+
+  /// The refresh running now, and whether another update arrived meanwhile.
+  Future<void>? _refreshing;
+  bool _refreshAgain = false;
+
+  /// Store reads so far, and messages they returned; for the tests and the
+  /// performance probe.
+  @visibleForTesting
+  int refreshes = 0, loaded = 0;
+
+  @visibleForTesting
+  Future<void> refresh() => _refresh();
+
+  /// Completes when the router is idle and the list reflects it.
+  @visibleForTesting
+  Future<void> get settled async {
+    await router?.idle;
+    await _refreshing;
+  }
+
+  /// Brings [messages] up to date with the store.
+  ///
+  /// A burst of router updates costs one read for the update that starts it
+  /// and at most one more for everything that arrives while it runs, and each
+  /// read returns only messages that changed since the previous one.
   Future<void> _refresh() {
-    _refreshWork = _refreshWork
-        .then((_) async {
-          final current = router;
-          if (current != null) {
-            messages = await current.store.messages();
-            for (final m in messages) {
-              if (_known.add(m.packet.messageId) &&
-                  _primed &&
-                  !m.outgoing &&
-                  m.packet.kind == MessageKind.sos) {
-                sosAlerts.add(m);
-              }
-            }
-            // Take the router's error once so a dismissed banner stays dismissed.
-            error = current.lastError ?? error;
-            current.lastError = null;
+    final running = _refreshing;
+    if (running != null) {
+      _refreshAgain = true;
+      return running;
+    }
+    late final Future<void> run;
+    run = _refreshLoop().whenComplete(() {
+      if (identical(_refreshing, run)) {
+        _refreshing = null;
+      }
+    });
+    return _refreshing = run;
+  }
+
+  Future<void> _refreshLoop() async {
+    do {
+      _refreshAgain = false;
+      try {
+        final current = router;
+        if (current != null) {
+          refreshes++;
+          final changed = await current.store.changes(_revision);
+          if (!identical(router, current)) {
+            return; // Stopped or restarted while reading.
           }
-          notifyListeners();
-        })
-        .catchError((Object e) {
-          error = '$e';
-          notifyListeners();
-        });
-    return _refreshWork;
+          _revision = changed.revision;
+          loaded += changed.messages.length;
+          _merge(changed.messages);
+          // Take the router's error once so a dismissed banner stays dismissed.
+          error = current.lastError ?? error;
+          current.lastError = null;
+        }
+      } catch (e) {
+        error = '$e';
+      }
+      notifyListeners();
+    } while (_refreshAgain);
+  }
+
+  void _merge(List<StoredMessage> changed) {
+    if (changed.isEmpty) {
+      return;
+    }
+    for (final m in changed) {
+      final isNew = _byId[m.packet.messageId] == null;
+      _byId[m.packet.messageId] = m;
+      if (isNew && _primed && !m.outgoing && m.packet.kind == MessageKind.sos) {
+        sosAlerts.add(m);
+      }
+    }
+    final all = _byId.values.toList()
+      ..sort((a, b) => b.packet.timestamp.compareTo(a.packet.timestamp));
+    // Same cap as the store, so both drop the same oldest messages.
+    for (final m in all.skip(maxMessages)) {
+      _byId.remove(m.packet.messageId);
+    }
+    messages = all.length > maxMessages ? all.sublist(0, maxMessages) : all;
   }
 
   void dismissError() {
@@ -120,6 +197,7 @@ class AppController extends ChangeNotifier {
           transport: AndroidBleTransport(),
           store: await SqliteStore.open(),
           name: name,
+          verifier: (await _cryptoWorker())?.verify,
         );
         _updates = router!.updates.listen((_) {
           unawaited(_refresh());
@@ -200,7 +278,7 @@ class AppController extends ChangeNotifier {
   Future<void> stop() async {
     await _updates?.cancel();
     _updates = null;
-    await _refreshWork;
+    await _refreshing;
     final current = router;
     router = null;
     if (_demoRouters.isNotEmpty) {
@@ -213,7 +291,8 @@ class AppController extends ChangeNotifier {
     }
     _network = null;
     messages = [];
-    _known.clear();
+    _byId.clear();
+    _revision = -1;
     _primed = false;
     sosAlerts.clear();
     notifyListeners();

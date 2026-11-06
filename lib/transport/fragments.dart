@@ -32,6 +32,9 @@ class _Assembly {
   final int count, length;
   final DateTime started = DateTime.now();
   final Map<int, Uint8List> parts = {};
+
+  /// Bytes held in [parts], kept up to date instead of summed per frame.
+  int received = 0;
   _Assembly(this.count, this.length);
 }
 
@@ -63,8 +66,10 @@ class Reassembler {
       _pending.remove(key);
       throw const FormatException('Inconsistent fragments');
     }
-    a.parts[index] = frame.sublist(12);
-    if (a.parts.values.fold<int>(0, (v, b) => v + b.length) > length) {
+    final part = frame.sublist(12);
+    a.received += part.length - (a.parts[index]?.length ?? 0);
+    a.parts[index] = part;
+    if (a.received > length) {
       _pending.remove(key);
       throw const FormatException('Oversized assembly');
     }
@@ -72,11 +77,15 @@ class Reassembler {
       return null;
     }
     _pending.remove(key);
-    final result = Uint8List.fromList([
-      for (var i = 0; i < count; i++) ...a.parts[i]!,
-    ]);
-    if (result.length != length) {
+    if (a.received != length) {
       throw const FormatException('Assembly length mismatch');
+    }
+    final result = Uint8List(length);
+    var offset = 0;
+    for (var i = 0; i < count; i++) {
+      final p = a.parts[i]!;
+      result.setRange(offset, offset + p.length, p);
+      offset += p.length;
     }
     return result;
   }

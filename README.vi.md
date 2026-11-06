@@ -7,10 +7,11 @@ Project dựa trên `BLE_Emergency_App_Huong_Dan.docx`, dành cho đồ án Flut
 - Giao diện tiếng Việt: SOS, “Tôi an toàn”, chat broadcast, nhắn riêng, peer/RSSI, đánh giá mạng.
 - Android dual role: central scan/connect + peripheral advertising/GATT server.
 - Managed flooding, TTL, dedup, store-and-forward khi gặp peer mới/kết nối lại.
+- Hiệu năng: giao diện đọc kho tăng dần theo `rev`, kiểm chữ ký trên isolate nền, cắt bảng theo lô; đo bằng `flutter test benchmark/perf_test.dart`.
 - Mỗi máy kề một hàng đợi gửi riêng theo ưu tiên (SOS trước), tách khỏi luồng nhận; hai kết nối tới cùng một máy chỉ gửi mỗi gói một lần; tự thử lại gửi lỗi mỗi 30 giây; đếm số máy kề đã nhận tin của mình.
 - Packet binary, phân mảnh MTU 23 trở lên, ghép lại có giới hạn tài nguyên.
 - Ed25519 ký packet; X25519 + HKDF + AES-GCM cho tin riêng; ACK ký số.
-- SQLite (schema v3, có migration) lưu inbox/outbox/dedup, danh bạ đã gặp, máy kề đã nhận tin và cài đặt (tên, giao diện); danh tính lưu qua Android Keystore.
+- SQLite (schema v4, có migration) lưu inbox/outbox/dedup, danh bạ đã gặp, máy kề đã nhận tin và cài đặt (tên, giao diện); danh tính lưu qua Android Keystore.
 - Foreground service để duy trì hoạt động trong nền trong cùng process.
 - Demo 3 node A–B–C và simulator tới 100 node, script benchmark.
 
@@ -91,7 +92,7 @@ Chữ ký xác nhận khóa nguồn phát, không chứng minh tên/người/cơ
 
 Chưa triển khai iOS, bản đồ offline và giao diện điều chỉnh duty cycle. Không dùng số CPU simulator làm số đo latency BLE.
 
-Kết quả hiện tại (06/11/2026): analyzer sạch, 47 test đạt. Integration Android đạt trên emulator Pixel 7 Pro (API 37) sau khi nâng cấp giao diện, database và backend, kể cả nâng cấp database từ bản 1.0.0 và từ v2 lên v3; ảnh trong `docs/screenshots/` chụp từ lần chạy này. Xem [kết quả xác minh](docs/VERIFICATION.md).
+Kết quả hiện tại (07/11/2026): analyzer sạch, 57 test đạt. Integration Android đạt trên emulator Pixel 7 Pro (API 37) sau khi nâng cấp giao diện, database, backend và hiệu năng, kể cả nâng cấp database từ bản 1.0.0 và qua từng phiên bản lên v4; ảnh trong `docs/screenshots/` chụp từ lần chạy này. Xem [kết quả xác minh](docs/VERIFICATION.md).
 
 ## Nhóm thực hiện
 
