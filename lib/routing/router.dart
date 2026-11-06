@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:typed_data';
 
 import '../core/contact.dart';
@@ -12,24 +13,84 @@ export '../core/contact.dart';
 
 class RouterStats {
   int received = 0, relayed = 0, duplicate = 0, rejected = 0, sentFrames = 0;
+
+  /// Transmissions that failed; [MeshRouter.resync] offers them again.
+  int failedSends = 0;
 }
 
+/// Packets waiting for one neighbouring phone: most urgent kind first, in
+/// arrival order within a kind.
+class _Outbox {
+  final _lanes = List.generate(5, (_) => Queue<Packet>());
+  final _queued = <String>{};
+
+  /// False when [p] is already waiting and [dedup] is on.
+  bool add(Packet p, {required bool dedup}) {
+    if (!_queued.add(p.messageId) && dedup) {
+      return false;
+    }
+    _lanes[p.priority].add(p);
+    return true;
+  }
+
+  Packet? take() {
+    for (final lane in _lanes) {
+      if (lane.isNotEmpty) {
+        final p = lane.removeFirst();
+        _queued.remove(p.messageId);
+        return p;
+      }
+    }
+    return null;
+  }
+}
+
+/// Signed flooding with dedup, TTL, ACK and store-and-forward.
+///
+/// Sending never blocks receiving: each neighbouring phone has its own outbox,
+/// drained by its own task, so a long store-and-forward backlog to one phone
+/// neither delays packets arriving from others nor keeps an SOS waiting behind
+/// queued chat. A phone reached over two links (Android's central and
+/// peripheral roles) is one neighbour and gets each packet once.
 class MeshRouter {
   final Identity identity;
   final MeshTransport transport;
   final MessageStore store;
   final String name;
   final bool deduplicate;
+
+  /// How often live neighbours are offered pending packets again, so a failed
+  /// send does not wait for the next reconnect. Null disables the timer.
+  final Duration? retryInterval;
+
+  /// A link that has not said hello by then is synced as its own neighbour.
+  final Duration helloTimeout;
   final stats = RouterStats();
   final contacts = <String, Contact>{};
   final _updates = StreamController<void>.broadcast();
   final _assembler = Reassembler();
-  final Map<String, Set<String>> _sent = {};
-  final Map<String, String> _peerNodes = {};
+
+  /// Connected link ids, as the transport names them.
   final Set<String> _links = {};
+
+  /// Link id to neighbour key: the node ID its hello proved, or `~link` for a
+  /// link that never said hello.
+  final Map<String, String> _peerNodes = {};
+  final Map<String, Timer> _helloWait = {};
+
+  /// Per neighbour: message ids it already has (we sent them or it sent us).
+  final Map<String, Set<String>> _sent = {};
+  final Map<String, _Outbox> _outboxes = {};
+  final Set<String> _draining = {};
+
+  /// Our own messages and the neighbours already recorded as holding them.
+  final Map<String, Set<String>> _handedTo = {};
+  final Set<Future<void>> _tasks = {};
   final Map<String, int> _contactSaved = {};
+  late final String _signer = hex(identity.publicSigning);
   Future<void> _work = Future.value();
   StreamSubscription<TransportEvent>? _subscription;
+  Timer? _retry;
   String? lastError;
   bool running = false;
   MeshRouter({
@@ -38,9 +99,36 @@ class MeshRouter {
     required this.store,
     required this.name,
     this.deduplicate = true,
+    this.retryInterval = const Duration(seconds: 30),
+    this.helloTimeout = const Duration(seconds: 5),
   });
   Stream<void> get updates => _updates.stream;
-  Future<void> get idle => _work;
+
+  /// Completes once received events are handled and outboxes are drained.
+  Future<void> get idle async {
+    while (true) {
+      final work = _work;
+      await work;
+      if (_tasks.isNotEmpty) {
+        await Future.wait(_tasks.toList());
+      } else if (identical(work, _work)) {
+        return;
+      }
+    }
+  }
+
+  /// Runs [task] in the background; [idle] waits for it.
+  void _track(Future<void> task) {
+    late final Future<void> tracked;
+    tracked = task
+        .catchError((Object e) {
+          lastError = '$e';
+          _notify();
+        })
+        .whenComplete(() => _tasks.remove(tracked));
+    _tasks.add(tracked);
+  }
+
   void _notify() {
     if (!_updates.isClosed) {
       _updates.add(null);
@@ -66,6 +154,14 @@ class MeshRouter {
     try {
       await transport.start();
       running = true;
+      final every = retryInterval;
+      if (every != null) {
+        _retry = Timer.periodic(every, (_) {
+          if (running) {
+            _track(resync());
+          }
+        });
+      }
       _notify();
     } catch (_) {
       await _subscription?.cancel();
@@ -78,36 +174,86 @@ class MeshRouter {
     if (event is PeerConnected) {
       // Android re-announces a link after MTU exchange or when one of its two
       // GATT roles drops; only a new link needs hello and store-and-forward.
-      if (_links.add(event.peer.id)) {
-        _sent.remove(event.peer.id);
-        // Hello is link-local and regenerated per link, so it is never queued.
-        final hello = await _packet(
-          MessageKind.hello,
-          MessageBody(name).encode(),
-          ttl: 1,
-        );
-        await _send(hello, event.peer);
-        await sync(event.peer);
+      final link = event.peer.id;
+      if (_links.add(link)) {
+        // Store-and-forward starts once the other side's hello says which
+        // phone this link reaches; see [_identify].
+        _helloWait[link] = Timer(helloTimeout, () => _identify(link, '~$link'));
+        _track(_greet(event.peer));
       }
     } else if (event is PeerDisconnected) {
-      _links.remove(event.id);
-      _sent.remove(event.id);
-      _peerNodes.remove(event.id);
+      final link = event.id;
+      _links.remove(link);
+      _helloWait.remove(link)?.cancel();
+      final node = _peerNodes.remove(link);
+      if (node != null && !_peerNodes.containsValue(node)) {
+        // Last link to that phone. It may have lost packets by the time it is
+        // back, so the next encounter syncs from scratch.
+        _sent.remove(node);
+        _outboxes.remove(node);
+      }
     } else if (event is FrameReceived) {
+      final Packet packet;
       try {
         final raw = _assembler.add(event.peerId, event.bytes);
-        if (raw != null) {
-          await _receive(Packet.decode(raw), event.peerId);
-        } else {
+        if (raw == null) {
           return;
         }
+        packet = Packet.decode(raw);
       } catch (_) {
         stats.rejected++;
+        _notify();
+        return;
+      }
+      try {
+        await _receive(packet, event.peerId);
+      } catch (e) {
+        // A valid packet we failed to handle (storage, crypto) is this
+        // phone's fault, not the sender's: surface it, don't count it rejected.
+        lastError = 'Không xử lý được tin vừa nhận: $e';
       }
     } else if (event is TransportError) {
       lastError = event.message;
     }
     _notify();
+  }
+
+  /// Hello is link-local and regenerated per link, so it is never queued.
+  Future<void> _greet(Peer peer) async {
+    final hello = await _packet(
+      MessageKind.hello,
+      MessageBody(name).encode(),
+      ttl: 1,
+    );
+    try {
+      await _transmit(hello, peer);
+    } catch (e) {
+      stats.failedSends++;
+      lastError = '$e';
+      _notify();
+    }
+  }
+
+  /// Binds [link] to neighbour [node] and offers that neighbour everything
+  /// pending.
+  void _identify(String link, String node) {
+    _helloWait.remove(link)?.cancel();
+    final previous = _peerNodes[link];
+    if (!_links.contains(link) || previous == node) {
+      return;
+    }
+    _peerNodes[link] = node;
+    if (previous != null && !_peerNodes.containsValue(previous)) {
+      // A link first synced without hello turned out to be [node].
+      final known = _sent.remove(previous);
+      if (known != null) {
+        _sent.putIfAbsent(node, () => {}).addAll(known);
+      }
+      _outboxes.remove(previous);
+    }
+    if (running) {
+      _track(_offerPending([node]));
+    }
   }
 
   Future<Packet> _packet(
@@ -140,6 +286,9 @@ class MeshRouter {
     for (var i = 0; i < s.length; i += 2)
       int.parse(s.substring(i, i + 2), radix: 16),
   ]);
+
+  /// Signs, stores and queues a message. Returns once it is stored; sending
+  /// happens in the background (see [idle]).
   Future<Packet> publish(
     MessageKind kind,
     MessageBody body, {
@@ -171,7 +320,7 @@ class MeshRouter {
         longitude: body.longitude,
       ),
     );
-    await _broadcast(p);
+    _broadcast(p);
     _notify();
     return p;
   }
@@ -180,6 +329,7 @@ class MeshRouter {
     // Dedup is checked before expensive signature verification; cache contains verified packets only.
     if (deduplicate && await store.hasSeen(p.messageId)) {
       stats.duplicate++;
+      _has(_peerNodes[via], p.messageId);
       return;
     }
     if (p.expired ||
@@ -197,18 +347,20 @@ class MeshRouter {
     var contactName = previous?.name ?? 'Thiết bị ${sender.substring(0, 6)}';
     if (p.kind == MessageKind.hello) {
       contactName = MessageBody.decode(p.payload).text;
-      if (p.hops == 1) {
-        _peerNodes[via] = sender;
-      }
     }
     await _remember(sender, contactName, p.exchangeKey);
     await store.retain(p);
     stats.received++;
+    if (p.kind == MessageKind.hello && p.hops == 1) {
+      _identify(via, sender);
+    }
+    final from = _peerNodes[via];
+    _has(from, p.messageId);
     final forMe = !p.broadcast && hex(p.recipient) == identity.id;
     // Relay before reading the body: a signed packet whose body this node
     // cannot decode is still forwarded to nodes that may understand it.
     if (p.kind != MessageKind.hello && !forMe && p.hops < p.maxHops) {
-      await _broadcast(p, except: via);
+      _broadcast(p, except: from);
       stats.relayed++;
     }
     if (p.kind == MessageKind.ack && p.payload.length == 16) {
@@ -217,10 +369,18 @@ class MeshRouter {
     } else if (p.kind != MessageKind.hello &&
         p.kind != MessageKind.ack &&
         (p.broadcast || forMe)) {
-      final clear = p.kind == MessageKind.privateChat
-          ? await identity.decrypt(p)
-          : p.payload;
-      final body = MessageBody.decode(clear);
+      final MessageBody body;
+      try {
+        body = MessageBody.decode(
+          p.kind == MessageKind.privateChat
+              ? await identity.decrypt(p)
+              : p.payload,
+        );
+      } catch (_) {
+        // Signed and already relayed, but unreadable on this phone.
+        stats.rejected++;
+        return;
+      }
       if (body.sender != null && body.sender!.trim().isNotEmpty) {
         await _remember(sender, body.sender!.trim(), p.exchangeKey);
       }
@@ -240,9 +400,21 @@ class MeshRouter {
           recipient: contacts[sender],
         );
         await store.retain(ack);
-        await _broadcast(ack);
+        _broadcast(ack);
       }
     }
+  }
+
+  /// Notes that neighbour [node] already holds [id], so it is not sent back.
+  void _has(String? node, String id) {
+    if (node == null || !deduplicate) {
+      return;
+    }
+    final known = _sent.putIfAbsent(node, () => <String>{});
+    if (known.length >= maxPackets) {
+      known.remove(known.first);
+    }
+    known.add(id);
   }
 
   /// Updates the in-memory contact and persists it when it is new, its name
@@ -262,49 +434,120 @@ class MeshRouter {
     }
   }
 
-  Future<void> sync(Peer peer) async {
-    for (final p in await store.pending()) {
-      if (p.hops < p.maxHops && p.kind != MessageKind.hello) {
-        try {
-          await _send(p, peer);
-        } catch (e) {
-          lastError = '$e';
-          break;
+  /// Neighbours with at least one live, identified link.
+  Set<String> get _neighbours => {for (final link in _links) ?_peerNodes[link]};
+
+  /// Offers every live neighbour all pending packets again. Packets a
+  /// neighbour already has are skipped, so this is cheap on a quiet mesh. It
+  /// runs every [retryInterval]; public for tests.
+  Future<void> resync() => _offerPending(_neighbours);
+
+  Future<void> _offerPending(Iterable<String> nodes) async {
+    final targets = nodes.toList();
+    if (targets.isEmpty) {
+      return;
+    }
+    final pending = await store.pending();
+    for (final node in targets) {
+      for (final p in pending) {
+        if (p.kind != MessageKind.hello) {
+          _enqueue(p, node);
         }
       }
     }
   }
 
-  Future<void> _broadcast(Packet p, {String? except}) async {
-    for (final peer in transport.peers.where((p) => p.id != except)) {
-      try {
-        await _send(p, peer);
-      } catch (e) {
-        lastError = '$e';
+  void _broadcast(Packet p, {String? except}) {
+    for (final node in _neighbours) {
+      if (node != except) {
+        _enqueue(p, node);
       }
     }
   }
 
-  Future<void> _send(Packet p, Peer peer) async {
+  void _enqueue(Packet p, String node) {
     if (p.hops >= p.maxHops || p.expired) {
       return;
     }
-    final sent = _sent.putIfAbsent(peer.id, () => <String>{});
-    if (deduplicate && sent.contains(p.messageId)) {
+    if (deduplicate && (_sent[node]?.contains(p.messageId) ?? false)) {
       return;
     }
+    final outbox = _outboxes.putIfAbsent(node, _Outbox.new);
+    if (outbox.add(p, dedup: deduplicate) && _draining.add(node)) {
+      _track(_drain(node));
+    }
+  }
+
+  /// Sends [node]'s outbox one packet at a time over its strongest link.
+  Future<void> _drain(String node) async {
+    try {
+      while (running) {
+        final p = _outboxes[node]?.take();
+        if (p == null) {
+          return;
+        }
+        if (deduplicate && (_sent[node]?.contains(p.messageId) ?? false)) {
+          continue;
+        }
+        final link = _linkTo(node);
+        if (link == null) {
+          _outboxes.remove(node);
+          return;
+        }
+        try {
+          await _transmit(p, link);
+        } catch (_) {
+          // Usually the link is going down; otherwise resync offers it again.
+          stats.failedSends++;
+          return;
+        }
+        _has(node, p.messageId);
+        if (hex(p.signingKey) == _signer &&
+            p.kind != MessageKind.ack &&
+            !node.startsWith('~')) {
+          await _handoff(p.messageId, node);
+        }
+      }
+    } finally {
+      _draining.remove(node);
+    }
+  }
+
+  Peer? _linkTo(String node) {
+    Peer? best;
+    for (final peer in transport.peers) {
+      if (_peerNodes[peer.id] == node &&
+          (best == null || peer.rssi > best.rssi)) {
+        best = peer;
+      }
+    }
+    return best;
+  }
+
+  Future<void> _transmit(Packet p, Peer peer) async {
     final raw = p.copy(hops: p.hops + 1).encode();
     for (final frame in Fragmenter.split(raw, mtu: peer.mtu)) {
       await transport.send(peer.id, frame);
       stats.sentFrames++;
     }
-    if (sent.length >= 5000) {
-      sent.remove(sent.first);
-    }
-    sent.add(p.messageId);
   }
 
-  String? nodeForPeer(String peerId) => _peerNodes[peerId];
+  Future<void> _handoff(String id, String node) async {
+    if (_handedTo.length >= 2000 && !_handedTo.containsKey(id)) {
+      _handedTo.remove(_handedTo.keys.first);
+    }
+    if (!_handedTo.putIfAbsent(id, () => {}).add(node)) {
+      return;
+    }
+    await store.recordHandoff(id, node);
+    _notify();
+  }
+
+  /// Node ID proven by the hello on link [peerId], if any.
+  String? nodeForPeer(String peerId) {
+    final node = _peerNodes[peerId];
+    return node == null || node.startsWith('~') ? null : node;
+  }
 
   /// Two phones usually link twice (each one's central role reaches the
   /// other's peripheral, under different addresses); hello shows both links
@@ -323,10 +566,19 @@ class MeshRouter {
 
   Future<void> stop() async {
     running = false;
+    _retry?.cancel();
+    _retry = null;
+    for (final t in _helloWait.values) {
+      t.cancel();
+    }
+    _helloWait.clear();
     await transport.stop();
     await _subscription?.cancel();
     await idle;
     _links.clear();
+    _peerNodes.clear();
+    _sent.clear();
+    _outboxes.clear();
     _notify();
   }
 

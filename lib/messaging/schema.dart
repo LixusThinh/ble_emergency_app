@@ -5,7 +5,7 @@ const databaseName = 'emergency_mesh.db';
 
 /// Bump this and add an entry to [_migrations] for every schema change.
 /// Never edit a migration that has shipped: phones upgrade from any version.
-const schemaVersion = 2;
+const schemaVersion = 3;
 
 typedef Migration = Future<void> Function(DatabaseExecutor db);
 
@@ -36,6 +36,13 @@ final Map<int, Migration> _migrations = {
     // pending(): WHERE acked = 0 ... ORDER BY priority, created.
     await db.execute(
       'CREATE INDEX packets_pending ON packets(acked, priority, created)',
+    );
+  },
+  3: (db) async {
+    // Which nearby phones took each of our own messages, so the UI can say
+    // whether an SOS has left this phone at all.
+    await db.execute(
+      'CREATE TABLE handoffs (message_id TEXT NOT NULL, node TEXT NOT NULL, PRIMARY KEY (message_id, node)) WITHOUT ROWID',
     );
   },
 };

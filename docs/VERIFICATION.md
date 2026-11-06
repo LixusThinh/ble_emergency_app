@@ -2,6 +2,19 @@
 
 Nhóm thực hiện: **Trần Gia Thịnh** (nhóm trưởng, 2380602136), Đỗ Minh Quang (2380601802), Nguyễn Thanh Hải (1911065203), Hồ Uy Thiện (2380602107).
 
+## Cập nhật 06/11/2026 — nâng cấp backend (nhánh `feat/backend`)
+
+| Kiểm tra | Kết quả |
+|---|---|
+| `flutter analyze` | Không có issue |
+| `flutter test` | 47 test đạt (36 trước đó + 9 test router trong `backend_test.dart` + 2 test SQLite: đếm máy đã nhận, thứ tự bỏ gói khi bảng đầy) |
+| Android integration | Đạt; thêm kiểm tra dòng "Đã đến 1 máy gần • tự gửi tiếp" dưới SOS trong chế độ thử |
+| Nâng cấp v2 → v3 trên emulator | Đạt. DB trên máy trước khi cài: `user_version` 2, tin "TIN TỪ BẢN 1.0.0". Sau khi cài bản mới và chạy integration: `user_version` 3, có thêm bảng `handoffs`, tin cũ vẫn còn |
+| Mô phỏng 50 và 100 máy (một kết nối mỗi cặp) | Giống hệt bản trước: 43/49 và 92/99 máy nhận SOS, 148 và 308 frame |
+| Chuỗi 4 máy, mỗi cặp hai kết nối như Android, gửi 10 tin | Bản trước: 180 frame, 60 gói trùng. Bản này: 60 frame, 0 gói trùng; máy cuối nhận đủ 10 tin |
+
+Kiểm tra ngược: chạy test mới trên router cũ thì test hai kết nối thấy 6 gói trùng và test SOS thấy SOS chưa được nhận khi đang kẹt đồng bộ. Tắt ưu tiên trong hàng đợi thì SOS xuống vị trí thứ 20; tắt ghi nhớ "máy kề đã có gói" thì resync gửi lại 4 frame thừa. Các thay đổi chưa được thử trên điện thoại thật với BLE.
+
 ## Cập nhật 06/11/2026 — nâng cấp database (nhánh `feat/database`)
 
 | Kiểm tra | Kết quả |

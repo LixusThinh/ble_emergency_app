@@ -24,16 +24,17 @@ Transport chỉ biết peer, MTU và frame. Router nhận frame, ghép packet, x
 
 Đánh giá nhiều node từ UI chạy trong Dart isolate riêng để chữ ký/mô phỏng không chặn luồng render. Emulator debug có thể xử lý crypto chậm; script CLI thuận tiện hơn cho benchmark 50–100 node.
 
-## Lưu trữ SQLite (schema v2)
+## Lưu trữ SQLite (schema v3)
 
 File `emergency_mesh.db` trong sandbox ứng dụng. Mã: `lib/messaging/schema.dart` (schema + migration), `sqlite_store.dart` (tin, gói, danh bạ), `settings_store.dart` (cài đặt).
 
 | Bảng | Nội dung | Giới hạn |
 |---|---|---|
-| `packets` | Gói đã xác minh: chống trùng và hàng chờ store-and-forward; `acked` = đã có ACK hợp lệ | 24 giờ, tối đa 5000 |
+| `packets` | Gói đã xác minh: chống trùng và hàng chờ store-and-forward; `acked` = đã có ACK hợp lệ | 24 giờ, tối đa 5000; khi đầy bỏ gói đã ACK trước, rồi loại kém khẩn cấp (chat), rồi gói cũ nhất, nên chat tràn không đẩy được SOS ra |
 | `messages` | Inbox/outbox đã giải mã hiển thị trên UI | 2000 tin mới nhất |
 | `contacts` (v2) | Node đã gặp: ID, tên tự khai, khóa trao đổi công khai, lần cuối thấy | 500 node gần nhất |
 | `settings` (v2) | Cặp khóa/giá trị: `display_name`, `theme_mode` | — |
+| `handoffs` (v3) | Tin của chính mình đã trao cho máy kề nào (ID tin, ID máy) | Xóa theo tin khi tin bị cắt khỏi `messages` |
 
 Index: `packets(created)`, `packets(acked, priority, created)` cho `pending()`, `messages(created)` cho danh sách tin, `contacts(last_seen)`.
 
@@ -84,17 +85,21 @@ Frame có header 12 byte: magic `F`, version, token 4 byte, index uint16, totalF
 
 ## Routing và store-and-forward
 
-1. Kết nối mới: gửi HELLO ký số, sau đó sync gói lưu chưa hết hạn. HELLO tạo mới cho mỗi kết nối, không lưu chờ gửi. Android báo lại một kết nối đang mở (đổi MTU, mất một vai trò GATT) chỉ cập nhật MTU, không gửi HELLO hay sync lại.
+1. Kết nối mới: gửi HELLO ký số. Khi nhận HELLO của bên kia, router biết kết nối này dẫn tới máy nào và mới bắt đầu sync gói lưu chưa hết hạn. Kết nối không gửi HELLO trong 5 giây vẫn được sync như một máy riêng. HELLO tạo mới cho mỗi kết nối, không lưu chờ gửi. Android báo lại một kết nối đang mở (đổi MTU, mất một vai trò GATT) chỉ cập nhật MTU, không gửi HELLO hay sync lại.
 2. Tin mới: ký/mã hóa, lưu packet và bản ghi UI trước khi gửi.
 3. Nhận packet: kiểm tra cấu trúc, dedup, tuổi tin (24 giờ), lệch thời gian tương lai ≤5 phút và chữ ký.
 4. Nhận tin của mình hoặc broadcast: lưu inbox. Với tin riêng gửi ACK có chữ ký.
 5. Nếu còn chặng và không phải tin riêng đã đến đích: gửi cho các peer khác nguồn vào. Bước này chạy trước khi đọc body, nên gói có chữ ký hợp lệ mà node không giải mã được vẫn được chuyển tiếp.
-6. Outbox sync ưu tiên SOS → ACK → trạng thái → chat. Không ngắt một packet đang truyền để chen SOS.
+6. Mỗi máy kề có một hàng đợi gửi riêng, chạy tách khỏi luồng nhận: gửi tồn đọng cho một máy không làm chậm việc nhận và chuyển tiếp tin từ máy khác. Trong hàng đợi, SOS → ACK → trạng thái → chat; SOS đến giữa lúc đang đồng bộ tồn đọng được gửi ngay sau gói đang truyền. Không ngắt một packet đang truyền để chen SOS.
 7. Gặp peer mới hoặc kết nối lại: sync gói chưa hết hạn. Dedup/pending dùng cùng bảng packets; tối đa 5000 gói. Tin UI giữ tối đa 2000 bản ghi.
+8. Hai kết nối tới cùng một máy (vai trò central và peripheral của Android) được tính là một máy kề: mỗi gói chỉ gửi một lần, qua kết nối có RSSI mạnh hơn. Router ghi nhớ máy kề nào đã có gói nào (do mình gửi hoặc do nó gửi tới), nên không gửi ngược gói về nơi nó đến.
+9. Gửi lỗi trên kết nối còn sống được thử lại: mỗi 30 giây router đưa lại các gói đang chờ cho mọi máy kề, bỏ qua gói máy đó đã có. Lỗi gửi được đếm trong `failedSends`, không hiện thành thông báo lỗi.
+10. Gói không đọc được (sai cấu trúc, sai chữ ký, không giải mã được) được đếm là bị loại. Lỗi của chính máy mình khi xử lý gói hợp lệ (ví dụ ghi database thất bại) được báo lên giao diện thay vì bị đếm lẫn vào gói bị loại.
+11. Với tin của chính mình, router ghi máy kề đã nhận vào bảng `handoffs`; giao diện hiện "Chưa đến máy nào" hoặc "Đã đến N máy gần". Chỉ tính máy đã chứng minh danh tính bằng HELLO. Con số này là số máy kề trực tiếp, không phải số máy trong cả mạng.
 
 ACK chỉ xác nhận tin riêng, và chỉ được chấp nhận khi sender của ACK trùng recipient của tin gốc. Mọi node đang giữ tin gốc, kể cả relay, đánh dấu nó đã xong khi thấy ACK hợp lệ và ngừng sync tin đó. Broadcast không có xác nhận toàn mạng; UI chỉ thể hiện đã lưu/chuyển tiếp. Tin lỗi gửi được giữ để thử khi kết nối lại. Không có retry vô hạn trên kết nối đang giữ nguyên.
 
-Thuật toán giữ bản nhận đầu tiên, nên tuyến dài đến trước có thể làm giảm độ phủ trong giới hạn TTL; không đảm bảo tìm đường ngắn nhất. Broadcast và chính gói ACK vẫn được relay giữ và sync đến hết thời hạn 24 giờ. Thời hạn của ACK không được rút ngắn: người nhận bỏ qua bản trùng của tin đã nhận nên không gửi lại ACK, và nếu ACK hết hạn trước khi gặp người gửi thì người gửi không bao giờ nhận được xác nhận. Không có global ACK cho broadcast.
+Chống trùng giữ bản nhận đầu tiên, nên tuyến dài đến trước có thể làm giảm độ phủ trong giới hạn TTL; không đảm bảo tìm đường ngắn nhất. Broadcast và chính gói ACK vẫn được relay giữ và sync đến hết thời hạn 24 giờ. Thời hạn của ACK không được rút ngắn: người nhận bỏ qua bản trùng của tin đã nhận nên không gửi lại ACK, và nếu ACK hết hạn trước khi gặp người gửi thì người gửi không bao giờ nhận được xác nhận. Không có global ACK cho broadcast.
 
 ## Bảo mật
 

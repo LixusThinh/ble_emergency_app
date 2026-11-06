@@ -39,8 +39,9 @@ class SqliteStore implements MessageStore {
               .millisecondsSinceEpoch,
         ],
       );
+      // Keep the most useful maxPackets - 1 to make room; see [maxPackets].
       await t.rawDelete(
-        'DELETE FROM packets WHERE id IN (SELECT id FROM packets ORDER BY created DESC LIMIT -1 OFFSET 4999)',
+        'DELETE FROM packets WHERE id IN (SELECT id FROM packets ORDER BY acked ASC, priority ASC, created DESC LIMIT -1 OFFSET ${maxPackets - 1})',
       );
       await t.insert('packets', {
         'id': p.messageId,
@@ -78,14 +79,29 @@ class SqliteStore implements MessageStore {
       'lon': m.longitude,
       'created': m.packet.timestamp,
     }, conflictAlgorithm: ConflictAlgorithm.ignore);
-    await db.rawDelete(
+    final trimmed = await db.rawDelete(
       'DELETE FROM messages WHERE id IN (SELECT id FROM messages ORDER BY created DESC LIMIT -1 OFFSET 2000)',
     );
+    if (trimmed > 0) {
+      await db.rawDelete(
+        'DELETE FROM handoffs WHERE message_id NOT IN (SELECT id FROM messages)',
+      );
+    }
+  }
+
+  @override
+  Future<void> recordHandoff(String id, String node) async {
+    await db.insert('handoffs', {
+      'message_id': id,
+      'node': node,
+    }, conflictAlgorithm: ConflictAlgorithm.ignore);
   }
 
   @override
   Future<List<StoredMessage>> messages() async =>
-      (await db.query('messages', orderBy: 'created DESC'))
+      (await db.rawQuery(
+            'SELECT m.*, (SELECT COUNT(*) FROM handoffs h WHERE h.message_id = m.id) AS handoffs FROM messages m ORDER BY m.created DESC',
+          ))
           .map(
             (r) => StoredMessage(
               Packet.decode(r['bytes'] as Uint8List),
@@ -93,6 +109,7 @@ class SqliteStore implements MessageStore {
               r['text'] as String,
               outgoing: r['outgoing'] == 1,
               acknowledged: r['acked'] == 1,
+              handoffs: r['handoffs'] as int,
               latitude: (r['lat'] as num?)?.toDouble(),
               longitude: (r['lon'] as num?)?.toDouble(),
             ),
