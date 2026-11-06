@@ -31,6 +31,28 @@ Kết quả chạy thật của simulator nằm trong `simulation-results.json`.
 6. Screen-off/background 30–60 phút: so sánh từng hãng, kiểm tra service, nguồn điện và việc hệ điều hành dừng process. Force-stop không tự khởi động lại.
 7. Chạy thêm Android 8–11 và Android 12+; thử từ chối quyền, Bluetooth tắt, GPS chưa có fix, thu hồi quyền, peripheral không hỗ trợ.
 
+## Hạn mức chống flood khi thử nghiệm
+
+Chống flood (`lib/routing/flood_guard.dart`) cũng áp dụng cho máy của nhóm khi thử. Máy trung gian chỉ nhận và chuyển tiếp từ **mỗi máy gửi**:
+
+| Loại tin | Một lúc | Sau đó |
+|---|---:|---:|
+| Chat, tin riêng, "Tôi an toàn", ACK, HELLO | 200 | 30 tin/phút |
+| SOS | 10 | 2 tin/phút |
+
+- Máy gửi luôn lưu đủ tin của mình, chỉ máy trung gian bỏ phần vượt hạn mức. Trên giao diện không có thông báo nào; gói bị bỏ chỉ được đếm vào `RouterStats.limited`.
+- Phần bị bỏ vẫn nằm trong hàng chờ của máy gửi và được gửi lại khi hai máy **ngắt rồi kết nối lại** (nếu hạn mức đã hồi). Trong lúc kết nối vẫn giữ nguyên, máy gửi không tự gửi lại, vì việc gửi không bị lỗi.
+- Hạn mức nằm trong bộ nhớ của máy trung gian. Mở lại app trên máy đó sẽ đặt lại hạn mức.
+- Kết nối gửi 20 gói sai cấu trúc hoặc sai chữ ký trong 1 phút bị bỏ qua 5 phút (đếm vào `RouterStats.ignoredFrames`). Máy cài cùng một bản build sẽ không gặp trường hợp này. Nếu thấy bị bỏ qua, kiểm tra xem các máy có cài cùng APK không.
+
+Để không nhầm hạn mức với lỗi mạng:
+
+1. Đo tỷ lệ tới đích bằng **chat**, không dùng SOS. Mỗi lượt ≥30 tin vẫn nằm trong hạn mức 200.
+2. Lượt dài hơn 200 tin từ cùng một máy thì gửi chậm hơn 30 tin/phút (cách nhau ≥2 giây), hoặc chia thành nhiều lượt cách nhau vài phút.
+3. Bài thử SOS: không bấm quá 10 SOS liên tục từ một máy; sau đó cách nhau ≥30 giây.
+4. Bài đo cần gửi dồn nhiều tin hơn thì dùng bản build tăng hạn mức, ví dụ `MeshRouter(..., guard: FloodGuard(burst: 5000, sosBurst: 1000))`, như `benchmark/perf_test.dart`. Ghi rõ trong cột "Ghi chú" của biểu mẫu là đã đổi hạn mức.
+5. Giữa các lượt đo, mở lại app trên các máy trung gian để bắt đầu với hạn mức đầy.
+
 ## Biểu mẫu số đo thực nghiệm
 
 Không điền số đo giả. Mỗi cấu hình nên ≥30 tin, ghi phiên bản Android/thiết bị, vị trí, môi trường và lặp thử.
