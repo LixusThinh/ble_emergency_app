@@ -51,6 +51,7 @@ Flutter + Kotlin · Android 8.0 trở lên (API 26) · Đồ án môn học
 - **Tin riêng:** trao đổi khóa X25519 → HKDF-SHA256 → mã hóa AES-256-GCM. Phần xác thực gắn với ID tin và người nhận.
 - **ID thiết bị** = 8 byte đầu SHA-256 của khóa công khai.
 - **Khóa danh tính** được mã hóa bằng khóa trong Android Keystore và không đưa vào bản sao lưu.
+- **Database mã hóa toàn bộ** (SQLite3 Multiple Ciphers, ChaCha20): tin nhắn, danh bạ và cài đặt trên máy không đọc được nếu thiếu khóa. Khóa ngẫu nhiên 256 bit do Android Keystore giữ. Bản cũ chưa mã hóa được tự mã hóa khi cập nhật, giữ nguyên dữ liệu.
 - Loại gói quá cũ (hơn 24 giờ) hoặc có thời gian lệch về tương lai quá 5 phút.
 
 ### 6. Chạy nền và lưu trữ
@@ -125,7 +126,7 @@ docs/              Kiến trúc, kế hoạch kiểm thử, kết quả xác min
 ## Kiểm thử
 
 - `flutter analyze`: không có lỗi.
-- `flutter test`: **57/57 test đạt** (trong đó 10 test chạy SQLite thật qua FFI: migration từ bản 1.0.0, danh bạ, cài đặt, khôi phục danh bạ sau khởi động lại, đếm máy đã nhận, thứ tự bỏ gói khi đầy, đọc tin theo revision, cắt bảng tin; 9 test router: hai kết nối một máy, SOS không bị kẹt sau tồn đọng, thử lại khi gửi lỗi, không gửi ngược, kết nối không chào hỏi; 4 test isolate kiểm chữ ký; 4 test controller: gộp và đọc tăng dần). Các test gồm: ký và chống sửa gói, phân mảnh MTU 23, chuyển tiếp A–B–C, chống trùng trên mạng tam giác, lưu chờ chuyển tiếp, ACK, gói giả mạo, ưu tiên SOS, tên người gửi qua nhiều chặng, gộp kết nối trùng, giao diện trên màn hình nhỏ, giao diện tối, lọc tin theo cuộc trò chuyện, soạn SOS, nhãn ngày.
+- `flutter test`: **64/64 test đạt** (trong đó 7 test mã hóa database: không khóa/sai khóa không mở được, nâng cấp DB cũ chưa mã hóa giữ dữ liệu, khôi phục khi bị ngắt giữa chừng, mất khóa; 10 test chạy SQLite thật qua FFI: migration từ bản 1.0.0, danh bạ, cài đặt, khôi phục danh bạ sau khởi động lại, đếm máy đã nhận, thứ tự bỏ gói khi đầy, đọc tin theo revision, cắt bảng tin; 9 test router: hai kết nối một máy, SOS không bị kẹt sau tồn đọng, thử lại khi gửi lỗi, không gửi ngược, kết nối không chào hỏi; 4 test isolate kiểm chữ ký; 4 test controller: gộp và đọc tăng dần). Các test gồm: ký và chống sửa gói, phân mảnh MTU 23, chuyển tiếp A–B–C, chống trùng trên mạng tam giác, lưu chờ chuyển tiếp, ACK, gói giả mạo, ưu tiên SOS, tên người gửi qua nhiều chặng, gộp kết nối trùng, giao diện trên màn hình nhỏ, giao diện tối, lọc tin theo cuộc trò chuyện, soạn SOS, nhãn ngày.
 - Integration test trên Android (emulator Pixel 7 Pro, API 37) **đạt ngày 07/11/2026** sau khi nâng cấp hiệu năng, kể cả nâng cấp database v3 → v4 giữ nguyên dữ liệu; ảnh trong `docs/screenshots/` chụp từ lần chạy này.
 - **BLE trên điện thoại thật chưa được kiểm chứng.** Kế hoạch đo nằm ở [docs/TEST_PLAN.md](docs/TEST_PLAN.md).
 
@@ -134,7 +135,7 @@ docs/              Kiến trúc, kế hoạch kiểm thử, kết quả xác min
 - Tin công khai không có xác nhận toàn mạng; ACK chỉ có cho tin riêng và chỉ chứng minh ứng dụng người nhận đã xử lý tin, không chứng minh người đó đã đọc.
 - Số chặng hiển thị không có chữ ký, nên máy trung gian xấu có thể sửa. Đây không phải bằng chứng về đường đi.
 - Tên hiển thị là tên tự khai; chữ ký chỉ chứng minh khóa phát tin, không chứng minh danh tính ngoài đời.
-- Chưa có forward secrecy; cơ sở dữ liệu trên máy lưu nội dung đã giải mã.
+- Chưa có forward secrecy. Database trên máy đã mã hóa, nhưng khi app đang chạy thì khóa nằm trong bộ nhớ, nên máy đã root vẫn đọc được.
 - Chưa hỗ trợ iOS và bản đồ offline. Bản release hiện vẫn ký bằng debug key.
 
 ## Tài liệu

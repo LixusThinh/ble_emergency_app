@@ -2,6 +2,19 @@
 
 Nhóm thực hiện: **Trần Gia Thịnh** (nhóm trưởng, 2380602136), Đỗ Minh Quang (2380601802), Nguyễn Thanh Hải (1911065203), Hồ Uy Thiện (2380602107).
 
+## Cập nhật 07/11/2026 — mã hóa database (nhánh `feat/db-encryption`)
+
+| Kiểm tra | Kết quả |
+|---|---|
+| `flutter analyze` | Không có issue |
+| `flutter test` | 64 test đạt (57 trước đó + 7 test mã hóa trong `encryption_test.dart`, chạy cùng engine SQLite3 Multiple Ciphers với điện thoại) |
+| Không có khóa / sai khóa | Mở thất bại ("file is not a database"); không tìm thấy nội dung tin hay `CREATE TABLE` trong file chính và file WAL. Test đối chứng không dùng khóa thì thấy nội dung |
+| Nâng cấp DB chưa mã hóa | Tin, cài đặt và `user_version` giữ nguyên; không còn bản `.plain`. Bị tắt giữa chừng thì lần sau khôi phục từ bản `.plain` và làm lại |
+| Mất khóa | File cũ được đổi tên `.unreadable-…` (vẫn mở được bằng khóa cũ), app mở trên database mới và có thông báo |
+| Android integration | Đạt. Thêm bước: file trên máy không còn header `SQLite format 3`, mở không khóa bị từ chối, lần mở thứ hai lấy lại đúng khóa |
+| Nâng cấp trên emulator | DB v4 chưa mã hóa từ lần chạy trước (có tin "TIN TỪ BẢN 1.0.0"). Sau khi cài bản mới: file kéo về máy tính, `sqlite3` thường báo "file is not a database", không thấy chữ của tin trong file. App đọc lại vẫn có tin "TIN TỪ BẢN 1.0.0", `user_version` 4, cipher `chacha20` |
+| Chi phí (máy tính, chạy 3 lần) | `retain()` 1,0 ms và `save()` 0,6 ms khi bảng đầy (như khi không mã hóa); `messages()` 2000 tin 6–8 ms (như cũ); `pending()` 5000 gói 5 → 9–10 ms |
+
 ## Cập nhật 07/11/2026 — nâng cấp hiệu năng (nhánh `feat/performance`)
 
 | Kiểm tra | Kết quả |
