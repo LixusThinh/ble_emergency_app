@@ -132,6 +132,8 @@ void main() {
     await tester.tap(find.text('Tin nhắn'));
     await waitFor(tester, find.text('Tôi cần hỗ trợ khẩn cấp.'));
     expect(find.text('Tôi cần hỗ trợ khẩn cấp.'), findsOneWidget);
+    // In the demo only the relay station is in range.
+    expect(find.text('Đã đến 1 máy gần • tự gửi tiếp'), findsOneWidget);
     await capture('02-messages');
     await tester.tap(find.text('Thiết bị'));
     await settle(tester);

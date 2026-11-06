@@ -577,13 +577,17 @@ class DeliveryStatus extends StatelessWidget {
   const DeliveryStatus(this.m, {super.key, required this.color});
   @override
   Widget build(BuildContext context) {
+    final n = m.handoffs;
     final (icon, text) = !m.outgoing
         ? (Icons.verified_outlined, '${m.packet.hops} chặng • chữ ký hợp lệ')
         : m.acknowledged
         ? (Icons.done_all, 'Người nhận đã xác nhận')
+        : n == 0
+        // Nothing has left this phone yet: say so plainly, it matters for SOS.
+        ? (Icons.schedule_send, 'Chưa đến máy nào • tự gửi khi gặp thiết bị')
         : m.packet.broadcast
-        ? (Icons.cell_tower, 'Đã phát • tự gửi tiếp khi gặp thiết bị')
-        : (Icons.schedule, 'Đang chờ xác nhận người nhận');
+        ? (Icons.cell_tower, 'Đã đến $n máy gần • tự gửi tiếp')
+        : (Icons.schedule, 'Đã chuyển đi • chờ người nhận xác nhận');
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
