@@ -199,6 +199,9 @@ class _MapPreview extends StatelessWidget {
           TileLayer(
             urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
             userAgentPackageName: 'vn.emergency.ble_emergency_app',
+            // Offline is the normal case here: a missing tile is a blank
+            // square, not an error worth reporting.
+            tileProvider: NetworkTileProvider(silenceExceptions: true),
           ),
           if (radius != null && radius > 0 && radius < 5000)
             CircleLayer(
