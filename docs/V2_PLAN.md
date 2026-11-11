@@ -22,6 +22,20 @@ Ngày lập: 12/11/2026, nhánh `feat/v2`. Quyết định đã chốt với tr�
    không đặt `service_role` key ở Vercel. Thao tác quản trị đi qua hàm SQL
    `security definer` có kiểm `is_admin()` và tự ghi `admin_audit`.
 
+## Trạng thái (12/11/2026)
+
+| Phần | Trạng thái | Kiểm chứng |
+|---|---|---|
+| P1 Vị trí | Xong | `test/location_test.dart` (20 test), integration test trên emulator |
+| P2 Supabase | Xong (chưa deploy) | `supabase/tests` (15 test RLS trên PGlite) |
+| P3 Tài khoản | Xong (chưa thử với Supabase thật) | `test/account_test.dart` (13 test với backend giả) |
+| P4 UX/UI | Xong | widget test + integration test trên emulator Pixel 7 Pro |
+| P5 Web admin | Xong (chưa deploy) | `next build`, kiểm redirect và header CSP ở máy local |
+| P6 CI, tài liệu | Xong | CI thêm job `database` và `admin`; `docs/DEPLOY_V2.md` |
+
+Chưa làm được trong đêm vì cần tài khoản thật: tạo project Supabase,
+deploy Vercel, thử đăng nhập đầu cuối và thử trên điện thoại thật.
+
 ## Các phần việc (mỗi phần một commit hoặc vài commit)
 
 ### P1. Vị trí chính xác cho SOS

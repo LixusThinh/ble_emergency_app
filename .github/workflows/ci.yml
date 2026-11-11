@@ -54,3 +54,37 @@ jobs:
           name: sos-mesh-debug-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
           retention-days: 14
+
+  database:
+    name: Database rules (RLS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: supabase/tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: supabase/tests/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  admin:
+    name: Admin web build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: admin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: admin/package-lock.json
+      - run: npm ci
+      - run: npm run build
