@@ -65,7 +65,7 @@ void main() {
     final ctx = tester.element(find.text('SOS MESH'));
     expect(Theme.of(ctx).brightness, Brightness.dark);
     expect(ctx.palette.canvas, Palette.dark.canvas);
-    for (final label in ['Tin nhắn', 'Thiết bị', 'Đánh giá', 'Khẩn cấp']) {
+    for (final label in ['Tin nhắn', 'Thiết bị', 'Tài khoản', 'Trang chủ']) {
       await tester.tap(find.text(label).last);
       await tester.pumpAndSettle();
     }
@@ -110,7 +110,7 @@ void main() {
     await tester.tap(find.text('Ngoại tuyến'));
     await tester.pumpAndSettle();
     expect(find.text('Thiết bị trong mạng'), findsOneWidget);
-    expect(find.text('Đến tab Khẩn cấp'), findsOneWidget);
+    expect(find.text('Đến Trang chủ'), findsOneWidget);
   });
 
   testWidgets('theme selector switches the app theme and keeps the choice', (
@@ -122,7 +122,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     final settings = AppSettings.memory();
     await tester.pumpWidget(EmergencyApp(settings: settings));
-    await tester.tap(find.text('Thiết bị'));
+    await tester.tap(find.text('Tài khoản'));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Tối'));
     await tester.tap(find.text('Tối'));

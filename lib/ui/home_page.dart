@@ -3,28 +3,31 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../account/account_controller.dart';
 import '../app/controller.dart';
 import '../app/settings.dart';
 import '../core/packet.dart';
+import 'account_tab.dart';
 import 'chat_tab.dart';
 import 'emergency_tab.dart';
 import 'peers_tab.dart';
-import 'simulator_page.dart';
 import 'sos_dialog.dart';
 import 'theme.dart';
 import 'widgets.dart';
 
 class HomePage extends StatefulWidget {
   final AppSettings settings;
-  const HomePage({super.key, required this.settings});
+  final AccountController account;
+  const HomePage({super.key, required this.settings, required this.account});
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
 /// Holds navigation state only; the header and the visible tab rebuild from
 /// [AppController] through a ListenableBuilder, the navigation bar does not.
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   late final c = AppController(settings: widget.settings);
+  AccountController get account => widget.account;
   final input = TextEditingController();
   int tab = 0;
   String? recipientId;
@@ -35,6 +38,30 @@ class _HomePageState extends State<HomePage> {
     c.error = widget.settings.launchNotice;
     widget.settings.launchNotice = null;
     c.addListener(_changed);
+    c.onActivity = (action, details, sos) {
+      if (sos != null) {
+        unawaited(
+          account.recordSos(
+            sos,
+            demo: c.demo,
+            senderName: sos.outgoing
+                ? c.name
+                : c.router?.contacts[sos.senderId]?.name,
+          ),
+        );
+      } else {
+        unawaited(account.record(action, details));
+      }
+    };
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Back in the app is the likeliest moment the network came back.
+    if (state == AppLifecycleState.resumed) {
+      unawaited(account.flush());
+    }
   }
 
   void _changed() {
@@ -78,6 +105,8 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    c.onActivity = null;
     c.removeListener(_changed);
     unawaited(c.stop());
     input.dispose();
@@ -116,7 +145,12 @@ class _HomePageState extends State<HomePage> {
                 child: KeyedSubtree(
                   key: ValueKey(tab),
                   child: switch (tab) {
-                    0 => EmergencyTab(c: c, onSos: _sos, onTab: _go),
+                    0 => EmergencyTab(
+                      c: c,
+                      account: account,
+                      onSos: _sos,
+                      onTab: _go,
+                    ),
                     1 => ChatTab(
                       c: c,
                       recipientId: recipientId,
@@ -133,7 +167,10 @@ class _HomePageState extends State<HomePage> {
                       },
                       onStart: () => _go(0),
                     ),
-                    _ => const SimulatorPage(),
+                    _ => AccountTab(
+                      account: account,
+                      settings: widget.settings,
+                    ),
                   },
                 ),
               ),
@@ -147,9 +184,9 @@ class _HomePageState extends State<HomePage> {
       onDestinationSelected: _go,
       destinations: const [
         NavigationDestination(
-          icon: Icon(Icons.shield_outlined),
-          selectedIcon: Icon(Icons.shield),
-          label: 'Khẩn cấp',
+          icon: Icon(Icons.home_outlined),
+          selectedIcon: Icon(Icons.home_rounded),
+          label: 'Trang chủ',
         ),
         NavigationDestination(
           icon: Icon(Icons.chat_bubble_outline),
@@ -158,9 +195,9 @@ class _HomePageState extends State<HomePage> {
         ),
         NavigationDestination(icon: Icon(Icons.radar), label: 'Thiết bị'),
         NavigationDestination(
-          icon: Icon(Icons.science_outlined),
-          selectedIcon: Icon(Icons.science),
-          label: 'Đánh giá',
+          icon: Icon(Icons.account_circle_outlined),
+          selectedIcon: Icon(Icons.account_circle),
+          label: 'Tài khoản',
         ),
       ],
     ),

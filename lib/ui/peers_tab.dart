@@ -34,11 +34,11 @@ class PeersTab extends StatelessWidget {
             child: EmptyState(
               icon: Icons.bluetooth_disabled,
               title: 'Mạng đang tắt',
-              detail: 'Bật mạng trong tab Khẩn cấp để tìm thiết bị.',
+              detail: 'Bật mạng ở Trang chủ để tìm thiết bị.',
               action: FilledButton.tonalIcon(
                 onPressed: onStart,
                 icon: const Icon(Icons.bluetooth),
-                label: const Text('Đến tab Khẩn cấp'),
+                label: const Text('Đến Trang chủ'),
               ),
             ),
           )
@@ -48,32 +48,6 @@ class PeersTab extends StatelessWidget {
         Text(
           'Chữ ký xác nhận nguồn phát theo khóa, không xác nhận danh tính ngoài đời. Tên hiển thị có thể trùng.',
           style: TextStyle(color: p.muted, fontSize: 12, height: 1.5),
-        ),
-        const SectionTitle('Giao diện'),
-        ListenableBuilder(
-          listenable: c.settings,
-          builder: (context, _) => SegmentedButton<ThemeMode>(
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment(
-                value: ThemeMode.system,
-                icon: Icon(Icons.brightness_auto_outlined),
-                label: Text('Theo máy'),
-              ),
-              ButtonSegment(
-                value: ThemeMode.light,
-                icon: Icon(Icons.light_mode_outlined),
-                label: Text('Sáng'),
-              ),
-              ButtonSegment(
-                value: ThemeMode.dark,
-                icon: Icon(Icons.dark_mode_outlined),
-                label: Text('Tối'),
-              ),
-            ],
-            selected: {c.settings.themeMode},
-            onSelectionChanged: (v) => c.settings.themeMode = v.single,
-          ),
         ),
       ],
     );

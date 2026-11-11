@@ -112,7 +112,7 @@ class LocationCard extends StatelessWidget {
             child: Row(
               children: [
                 TextButton.icon(
-                  onPressed: () => _directions(context, lat, lon),
+                  onPressed: () => openDirections(context, lat, lon),
                   icon: const Icon(Icons.directions_rounded, size: 18),
                   label: const Text('Chỉ đường'),
                 ),
@@ -140,7 +140,7 @@ class LocationCard extends StatelessWidget {
     );
   }
 
-  static Future<void> _directions(
+  static Future<void> openDirections(
     BuildContext context,
     double lat,
     double lon,

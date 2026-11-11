@@ -87,6 +87,12 @@ final Map<int, Migration> _migrations = {
     await db.execute('ALTER TABLE messages ADD COLUMN accuracy REAL');
     await db.execute('ALTER TABLE messages ADD COLUMN address TEXT');
     await db.execute('ALTER TABLE messages ADD COLUMN looked_up_address TEXT');
+    // Account activity waiting for the Internet, uploaded oldest first and
+    // only to the account it was recorded for.
+    await db.execute(
+      'CREATE TABLE outbox_events (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id TEXT NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL, created INTEGER NOT NULL)',
+    );
+    await db.execute('CREATE INDEX outbox_user ON outbox_events(user_id, id)');
   },
 };
 

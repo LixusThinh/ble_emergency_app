@@ -46,14 +46,16 @@ create table public.profiles (
 create table public.devices (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles (id) on delete cascade,
-  -- The phone's mesh node id: first 8 bytes of SHA-256(signing key), hex.
-  mesh_id text not null check (mesh_id ~ '^[0-9a-f]{16}$'),
+  -- Random id the app makes on first launch (8 bytes, hex). Deliberately
+  -- not the mesh identity, so the server cannot link a phone's account to
+  -- what it relays.
+  install_id text not null check (install_id ~ '^[0-9a-f]{16}$'),
   model text check (char_length(model) <= 80),
   platform text check (char_length(platform) <= 40),
   app_version text check (char_length(app_version) <= 40),
   first_seen timestamptz not null default now(),
   last_seen timestamptz not null default now(),
-  unique (user_id, mesh_id)
+  unique (user_id, install_id)
 );
 
 create table public.activity_logs (
@@ -73,8 +75,17 @@ create table public.sos_reports (
   id uuid primary key default gen_random_uuid(),
   -- The mesh message id, so the same SOS synced twice stays one report.
   message_id text not null unique check (message_id ~ '^[0-9a-f]{32}$'),
+  -- Who uploaded it: the sender, or (relayed) a phone that received it over
+  -- the mesh and had Internet, which makes it a bridge for people offline.
   user_id uuid not null references public.profiles (id) on delete cascade,
   device_id uuid references public.devices (id) on delete set null,
+  relayed boolean not null default false,
+  -- From the simulator's demo network, not a real person.
+  demo boolean not null default false,
+  -- The sender as the mesh knows it (node id and the name it signed).
+  origin_mesh_id text check (origin_mesh_id ~ '^[0-9a-f]{16}$'),
+  sender_name text check (char_length(sender_name) <= 80),
+  hops smallint check (hops between 0 and 15),
   body text not null check (char_length(body) <= 2000),
   latitude double precision check (latitude between -90 and 90),
   longitude double precision check (longitude between -180 and 180),
@@ -253,7 +264,7 @@ create policy audit_read on public.admin_audit for select to authenticated
 
 -- Registers (or refreshes) this phone for the signed-in user; returns its id.
 create function public.register_device(
-  p_mesh_id text, p_model text, p_platform text, p_app_version text
+  p_install_id text, p_model text, p_platform text, p_app_version text
 )
 returns uuid
 language plpgsql security definer set search_path = ''
@@ -264,10 +275,10 @@ begin
   if not public.is_active_user() then
     raise exception 'Tài khoản không hoạt động' using errcode = '42501';
   end if;
-  insert into public.devices (user_id, mesh_id, model, platform, app_version)
-  values (auth.uid(), p_mesh_id, left(p_model, 80), left(p_platform, 40),
+  insert into public.devices (user_id, install_id, model, platform, app_version)
+  values (auth.uid(), p_install_id, left(p_model, 80), left(p_platform, 40),
           left(p_app_version, 40))
-  on conflict (user_id, mesh_id) do update
+  on conflict (user_id, install_id) do update
     set model = excluded.model, platform = excluded.platform,
         app_version = excluded.app_version, last_seen = now()
   returning id into result;
@@ -377,7 +388,7 @@ begin
     'sos_24h',
       (select count(*) from public.sos_reports where sent_at > now() - interval '24 hours'),
     'sos_open',
-      (select count(*) from public.sos_reports where status = 'open'),
+      (select count(*) from public.sos_reports where status = 'open' and not demo),
     'activity_24h',
       (select count(*) from public.activity_logs where created_at > now() - interval '24 hours')
   );

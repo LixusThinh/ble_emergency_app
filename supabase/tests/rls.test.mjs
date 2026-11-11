@@ -124,7 +124,7 @@ test('register_device upserts the phone and only its owner sees it', async () =>
   await fails(rows(`select public.register_device('not-hex', 'x', 'y', 'z')`), /check constraint/);
   await as('binh');
   assert.equal((await rows(`select * from public.devices`)).length, 0);
-  await fails(db.query(`insert into public.devices (user_id, mesh_id) values (auth.uid(), 'ffffffffffffffff')`), /permission denied/);
+  await fails(db.query(`insert into public.devices (user_id, install_id) values (auth.uid(), 'ffffffffffffffff')`), /permission denied/);
 });
 
 test('activity logs are append-only and only for yourself', async () => {
@@ -161,6 +161,22 @@ test('SOS reports: users file their own, open, and cannot handle them', async ()
   await fails(db.query(`insert into public.sos_reports (message_id, user_id, body, sent_at, latitude) values ($1, auth.uid(), 'x', now(), 10)`, ['d'.repeat(32)]), /check constraint/);
   await as('binh');
   assert.equal((await rows(`select * from public.sos_reports`)).length, 0);
+});
+
+test('a phone with Internet can bridge an SOS it received over the mesh', async () => {
+  await as('binh');
+  const msg = 'f'.repeat(32);
+  const insert = `insert into public.sos_reports (message_id, user_id, relayed, origin_mesh_id, sender_name, hops, body, latitude, longitude, sent_at)
+    values ($1, auth.uid(), true, '0123456789abcdef', 'Người lạ', 2, 'Kẹt trên mái', 10.7, 106.6, now())
+    on conflict (message_id) do nothing`;
+  await db.query(insert, [msg]);
+  // A second phone bridging the same SOS changes nothing.
+  await as('an');
+  await db.query(insert, [msg]);
+  await asOwner();
+  const all = await rows(`select user_id, relayed, sender_name from public.sos_reports where message_id = $1`, [msg]);
+  assert.deepEqual(all, [{ user_id: users.binh, relayed: true, sender_name: 'Người lạ' }]);
+  await db.query(`delete from public.sos_reports where message_id = $1`, [msg]);
 });
 
 test('non-admins cannot call admin functions or read the audit', async () => {

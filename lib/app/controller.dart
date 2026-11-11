@@ -35,6 +35,27 @@ class AppController extends ChangeNotifier {
     address: 'Trường ĐH Công nghệ TP.HCM (HUTECH), 475A Điện Biên Phủ, TP. Hồ Chí Minh',
   );
 
+  /// Told what the user does on the mesh, for the account's activity log:
+  /// an action name, small details, and the SOS concerned if any.
+  void Function(
+    String action,
+    Map<String, Object?> details,
+    StoredMessage? sos,
+  )?
+  onActivity;
+
+  void _activity(
+    String action, [
+    Map<String, Object?> details = const {},
+    StoredMessage? sos,
+  ]) {
+    try {
+      onActivity?.call(action, details, sos);
+    } catch (e) {
+      debugPrint('Không ghi được hoạt động $action: $e');
+    }
+  }
+
   /// Received SOS whose position this phone has tried to name already.
   final Set<String> _lookedUp = {};
 
@@ -142,6 +163,7 @@ class AppController extends ChangeNotifier {
       _byId[m.packet.messageId] = m;
       if (isNew && _primed && !m.outgoing && m.packet.kind == MessageKind.sos) {
         sosAlerts.add(m);
+        _activity('sos_received', const {}, m);
       }
     }
     final all = _byId.values.toList()
@@ -257,6 +279,7 @@ class AppController extends ChangeNotifier {
       // Messages already stored before this start are history, not alerts.
       _primed = true;
       error = warning ?? error;
+      _activity('mesh_start', {'mode': simulated ? 'demo' : 'ble'});
     } catch (e) {
       error = '$e';
       await stop();
@@ -293,7 +316,7 @@ class AppController extends ChangeNotifier {
           error = 'SOS đã gửi không kèm vị trí: chưa bắt được GPS hoặc chưa cấp quyền vị trí.';
         }
       }
-      await r.publish(
+      final p = await r.publish(
         kind,
         MessageBody(
           text,
@@ -305,6 +328,24 @@ class AppController extends ChangeNotifier {
         recipient: recipient,
       );
       published = true;
+      if (kind == MessageKind.sos) {
+        _activity(
+          'sos_sent',
+          {'demo': demo},
+          StoredMessage(
+            p,
+            r.identity.id,
+            text,
+            outgoing: true,
+            latitude: place?.fix.latitude,
+            longitude: place?.fix.longitude,
+            accuracy: place?.fix.accuracy,
+            address: place?.address,
+          ),
+        );
+      } else if (kind == MessageKind.safe) {
+        _activity('safe_sent', {'demo': demo});
+      }
       if (demo) {
         await _network!.drain(_demoRouters);
         if (kind == MessageKind.sos) {
@@ -325,6 +366,15 @@ class AppController extends ChangeNotifier {
       notifyListeners();
     }
     return published;
+  }
+
+  /// Turns the network off at the user's request.
+  Future<void> stopNetwork() async {
+    final mode = router == null ? null : (demo ? 'demo' : 'ble');
+    await stop();
+    if (mode != null) {
+      _activity('mesh_stop', {'mode': mode});
+    }
   }
 
   Future<void> stop() async {
