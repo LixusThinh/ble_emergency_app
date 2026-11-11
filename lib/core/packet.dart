@@ -132,70 +132,146 @@ class Packet {
   );
 }
 
-/// Binary application body: flags, optional lat/lon doubles, optional
-/// length-prefixed sender name, UTF-8 text.
+/// Binary application body: flags, optional lat/lon doubles and their
+/// accuracy, optional length-prefixed sender name and street address, UTF-8
+/// text.
 ///
 /// The sender name rides in signed bodies because hello is link-local: without
-/// it, a node two or more hops away would only ever be shown by its ID.
+/// it, a node two or more hops away would only ever be shown by its ID. The
+/// address is what the sender's phone looked the coordinates up as; it is
+/// signed too, so relays cannot move an SOS somewhere else.
 class MessageBody {
-  static const _location = 1, _sender = 2;
+  static const _location = 1, _sender = 2, _address = 4, _accuracy = 8;
+  static const _known = _location | _sender | _address | _accuracy;
   final String text;
   final double? latitude, longitude;
-  final String? sender;
-  MessageBody(this.text, {this.latitude, this.longitude, this.sender});
+
+  /// Radius in metres the position is good to; needs a location.
+  final double? accuracy;
+  final String? sender, address;
+  MessageBody(
+    this.text, {
+    this.latitude,
+    this.longitude,
+    this.accuracy,
+    this.sender,
+    this.address,
+  });
+
+  bool get hasLocation => latitude != null && longitude != null;
+
+  /// [address] as [encode] sends it: trimmed, and only with a location.
+  String? get placeName {
+    final a = address?.trim();
+    return hasLocation && a != null && a.isNotEmpty ? a : null;
+  }
+
+  static Uint8List? _short(String? value, String what) {
+    if (value == null || value.trim().isEmpty) {
+      return null;
+    }
+    final b = utf8.encode(value.trim());
+    if (b.length > 255) {
+      throw FormatException('$what tối đa 255 byte UTF-8');
+    }
+    return b;
+  }
+
   Uint8List encode() {
-    final location = latitude != null && longitude != null;
+    final location = hasLocation;
     final t = utf8.encode(text);
-    final s = sender == null || sender!.isEmpty ? null : utf8.encode(sender!);
     if (t.length > 2000) {
       throw const FormatException('Tin nhắn tối đa 2000 byte UTF-8');
     }
-    if (s != null && s.length > 255) {
-      throw const FormatException('Tên hiển thị tối đa 255 byte UTF-8');
-    }
+    final s = _short(sender, 'Tên hiển thị');
+    final a = location ? _short(address, 'Địa chỉ') : null;
+    final acc = location && accuracy != null && accuracy! >= 0;
     final b = Uint8List(
-      1 + (location ? 16 : 0) + (s == null ? 0 : 1 + s.length) + t.length,
+      1 +
+          (location ? 16 : 0) +
+          (acc ? 4 : 0) +
+          (s == null ? 0 : 1 + s.length) +
+          (a == null ? 0 : 1 + a.length) +
+          t.length,
     );
-    b[0] = (location ? _location : 0) | (s == null ? 0 : _sender);
+    final d = ByteData.sublistView(b);
+    b[0] =
+        (location ? _location : 0) |
+        (s == null ? 0 : _sender) |
+        (a == null ? 0 : _address) |
+        (acc ? _accuracy : 0);
     var offset = 1;
     if (location) {
-      ByteData.sublistView(b)
+      d
         ..setFloat64(1, latitude!)
         ..setFloat64(9, longitude!);
       offset = 17;
     }
-    if (s != null) {
-      b[offset] = s.length;
-      b.setRange(offset + 1, offset + 1 + s.length, s);
-      offset += 1 + s.length;
+    if (acc) {
+      d.setFloat32(offset, accuracy!);
+      offset += 4;
+    }
+    for (final field in [s, a]) {
+      if (field != null) {
+        b[offset] = field.length;
+        b.setRange(offset + 1, offset + 1 + field.length, field);
+        offset += 1 + field.length;
+      }
     }
     b.setRange(offset, b.length, t);
     return b;
   }
 
   factory MessageBody.decode(Uint8List b) {
-    if (b.isEmpty || b[0] & ~(_location | _sender) != 0) {
-      throw const FormatException('Invalid message body');
+    const bad = FormatException('Invalid message body');
+    if (b.isEmpty || b[0] & ~_known != 0) {
+      throw bad;
     }
-    final location = b[0] & _location != 0;
-    var offset = location ? 17 : 1;
-    if (b.length < offset) {
-      throw const FormatException('Invalid message body');
-    }
-    String? sender;
-    if (b[0] & _sender != 0) {
-      if (b.length < offset + 1 || b.length < offset + 1 + b[offset]) {
-        throw const FormatException('Invalid message body');
-      }
-      sender = utf8.decode(b.sublist(offset + 1, offset + 1 + b[offset]));
-      offset += 1 + b[offset];
+    final flags = b[0];
+    final location = flags & _location != 0;
+    // Accuracy and address only describe a location.
+    if (!location && flags & (_address | _accuracy) != 0) {
+      throw bad;
     }
     final d = ByteData.sublistView(b);
+    var offset = location ? 17 : 1;
+    double? accuracy;
+    if (flags & _accuracy != 0) {
+      if (b.length < offset + 4) {
+        throw bad;
+      }
+      final v = d.getFloat32(offset);
+      accuracy = v.isFinite && v >= 0 ? v : null;
+      offset += 4;
+    }
+    if (b.length < offset) {
+      throw bad;
+    }
+    String? field(int flag) {
+      if (flags & flag == 0) {
+        return null;
+      }
+      if (b.length < offset + 1 || b.length < offset + 1 + b[offset]) {
+        throw bad;
+      }
+      final v = utf8.decode(b.sublist(offset + 1, offset + 1 + b[offset]));
+      offset += 1 + b[offset];
+      return v;
+    }
+
+    final sender = field(_sender);
+    final address = field(_address);
+    // A position no map can show (NaN, out of range) is dropped, not trusted.
+    final lat = location ? d.getFloat64(1) : double.nan,
+        lon = location ? d.getFloat64(9) : double.nan;
+    final valid = lat.abs() <= 90 && lon.abs() <= 180;
     return MessageBody(
       utf8.decode(b.sublist(offset)),
-      latitude: location ? d.getFloat64(1) : null,
-      longitude: location ? d.getFloat64(9) : null,
+      latitude: valid ? lat : null,
+      longitude: valid ? lon : null,
+      accuracy: valid ? accuracy : null,
       sender: sender,
+      address: valid ? address : null,
     );
   }
 }

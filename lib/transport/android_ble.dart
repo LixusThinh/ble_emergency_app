@@ -76,8 +76,4 @@ class AndroidBleTransport implements MeshTransport {
   /// [reset] then makes a new one.
   static Future<String> databaseKey({bool reset = false}) async =>
       (await channel.invokeMethod<String>('databaseKey', {'reset': reset}))!;
-  static Future<Map<String, dynamic>?> location() async {
-    final value = await channel.invokeMapMethod<String, dynamic>('location');
-    return value;
-  }
 }

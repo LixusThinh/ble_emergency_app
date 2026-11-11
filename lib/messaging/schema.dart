@@ -9,7 +9,7 @@ const databaseName = 'emergency_mesh.db';
 
 /// Bump this and add an entry to [_migrations] for every schema change.
 /// Never edit a migration that has shipped: phones upgrade from any version.
-const schemaVersion = 5;
+const schemaVersion = 6;
 
 typedef Migration = Future<void> Function(DatabaseExecutor db);
 
@@ -79,6 +79,14 @@ final Map<int, Migration> _migrations = {
       );
     }
     await batch.commit(noResult: true);
+  },
+  6: (db) async {
+    // 2.0: SOS carry how accurate the position is and the street address the
+    // sender looked it up as; a receiver that had to look it up itself keeps
+    // its own answer apart, so the UI can say whose it is.
+    await db.execute('ALTER TABLE messages ADD COLUMN accuracy REAL');
+    await db.execute('ALTER TABLE messages ADD COLUMN address TEXT');
+    await db.execute('ALTER TABLE messages ADD COLUMN looked_up_address TEXT');
   },
 };
 

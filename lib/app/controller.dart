@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import '../core/crypto_worker.dart';
 import '../core/identity.dart';
 import '../core/packet.dart';
+import '../location/geocoder.dart';
+import '../location/locator.dart';
 import '../messaging/sqlite_store.dart';
 import '../messaging/store.dart';
 import '../routing/router.dart';
@@ -19,8 +21,22 @@ class AppController extends ChangeNotifier {
   bool busy = false, demo = false;
   String? error;
   final AppSettings settings;
-  AppController({AppSettings? settings})
-    : settings = settings ?? AppSettings.memory();
+  final Locator locator;
+  final Geocoder geocoder;
+  AppController({AppSettings? settings, Locator? locator, Geocoder? geocoder})
+    : settings = settings ?? AppSettings.memory(),
+      locator = locator ?? const PlatformLocator(),
+      geocoder = geocoder ?? CachingGeocoder.standard();
+
+  /// Where the simulator's phones stand, with the address the geocoder gives
+  /// for it, so the demo shows the same thing with or without Internet.
+  static const demoPlace = (
+    fix: LocationFix(10.801603, 106.714778, accuracy: 8),
+    address: 'Trường ĐH Công nghệ TP.HCM (HUTECH), 475A Điện Biên Phủ, TP. Hồ Chí Minh',
+  );
+
+  /// Received SOS whose position this phone has tried to name already.
+  final Set<String> _lookedUp = {};
 
   /// Name shown to other phones; falls back when the user left it empty.
   String get name =>
@@ -135,6 +151,39 @@ class AppController extends ChangeNotifier {
       _byId.remove(m.packet.messageId);
     }
     messages = all.length > maxMessages ? all.sublist(0, maxMessages) : all;
+    _nameIncoming(changed);
+  }
+
+  /// Looks up the address of each received SOS that came without one (the
+  /// sender had no Internet), one at a time, and stores what it finds.
+  void _nameIncoming(List<StoredMessage> changed) {
+    final r = router;
+    if (r == null || demo) {
+      return;
+    }
+    for (final m in changed) {
+      if (m.outgoing ||
+          m.packet.kind != MessageKind.sos ||
+          !m.hasLocation ||
+          m.placeName != null ||
+          !_lookedUp.add(m.packet.messageId)) {
+        continue;
+      }
+      unawaited(
+        geocoder
+            .lookup(m.latitude!, m.longitude!)
+            .then((address) async {
+              if (address == null || !identical(router, r)) {
+                return;
+              }
+              await r.store.saveLookedUpAddress(m.packet.messageId, address);
+              await _refresh();
+            })
+            .catchError((Object _) {
+              // Still offline; the next start tries again.
+            }),
+      );
+    }
   }
 
   void dismissError() {
@@ -236,20 +285,23 @@ class AppController extends ChangeNotifier {
     error = null;
     notifyListeners();
     try {
-      double? lat, lon;
-      if (gps && !demo) {
+      Place? place;
+      if (gps) {
         try {
-          final location = await AndroidBleTransport.location();
-          lat = (location?['latitude'] as num?)?.toDouble();
-          lon = (location?['longitude'] as num?)?.toDouble();
+          place = demo ? demoPlace : await locateAndName(locator, geocoder);
         } catch (_) {
-          error =
-              'SOS đã gửi không kèm GPS: chưa có vị trí hoặc chưa cấp quyền.';
+          error = 'SOS đã gửi không kèm vị trí: chưa bắt được GPS hoặc chưa cấp quyền vị trí.';
         }
       }
       await r.publish(
         kind,
-        MessageBody(text, latitude: lat, longitude: lon),
+        MessageBody(
+          text,
+          latitude: place?.fix.latitude,
+          longitude: place?.fix.longitude,
+          accuracy: place?.fix.accuracy,
+          address: place?.address,
+        ),
         recipient: recipient,
       );
       published = true;
@@ -294,6 +346,7 @@ class AppController extends ChangeNotifier {
     _byId.clear();
     _revision = -1;
     _primed = false;
+    _lookedUp.clear();
     sosAlerts.clear();
     notifyListeners();
   }

@@ -38,6 +38,9 @@ dependencies:
   # below), so it is encrypted and the same engine runs on phones and in tests.
   sqflite_common_ffi: ^2.4.5
   sqlite3: ^3.9.0
+  flutter_map: ^8.3.2
+  latlong2: ^0.10.1
+  url_launcher: ^6.3.3
 
 dev_dependencies:
   integration_test:

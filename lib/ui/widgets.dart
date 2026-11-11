@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../app/controller.dart';
 import '../core/packet.dart';
 import '../messaging/store.dart';
+import 'location_card.dart';
 import 'theme.dart';
 
 String _two(int v) => v.toString().padLeft(2, '0');
@@ -527,49 +527,6 @@ class _SosButtonState extends State<SosButton>
   }
 }
 
-class GpsRow extends StatelessWidget {
-  final StoredMessage m;
-  const GpsRow(this.m, {super.key});
-  @override
-  Widget build(BuildContext context) {
-    final p = context.palette;
-    final coords =
-        '${m.latitude!.toStringAsFixed(6)}, ${m.longitude!.toStringAsFixed(6)}';
-    return Container(
-      padding: const EdgeInsets.fromLTRB(10, 2, 2, 2),
-      decoration: BoxDecoration(
-        color: p.surface,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.place, color: p.danger, size: 18),
-          const SizedBox(width: 6),
-          Expanded(
-            child: SelectableText(
-              coords,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12.5),
-            ),
-          ),
-          IconButton(
-            tooltip: 'Sao chép tọa độ',
-            iconSize: 18,
-            onPressed: () async {
-              await Clipboard.setData(ClipboardData(text: coords));
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Đã sao chép tọa độ')),
-                );
-              }
-            },
-            icon: const Icon(Icons.copy_rounded),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// Delivery state of a message; outgoing broadcasts have no network-wide ACK.
 class DeliveryStatus extends StatelessWidget {
   final StoredMessage m;
@@ -667,7 +624,7 @@ class MessageBubble extends StatelessWidget {
                 fontWeight: FontWeight.w600,
               ),
             ),
-            if (m.latitude != null) ...[const SizedBox(height: 10), GpsRow(m)],
+            if (m.hasLocation) ...[const SizedBox(height: 10), LocationCard(m)],
             const SizedBox(height: 8),
             DeliveryStatus(m, color: tint.withValues(alpha: .85)),
           ],
@@ -839,15 +796,9 @@ class SosAlert extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(m.text, style: const TextStyle(fontSize: 15, height: 1.4)),
-                if (m.latitude != null) ...[
+                if (m.hasLocation) ...[
                   const SizedBox(height: 12),
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      border: Border.all(color: context.palette.line),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: GpsRow(m),
-                  ),
+                  LocationCard(m),
                 ],
                 const SizedBox(height: 18),
                 Row(
