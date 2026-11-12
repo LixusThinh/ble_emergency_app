@@ -10,6 +10,14 @@ Flutter + Kotlin · Android 8.0 trở lên (API 26) · Đồ án môn học
 
 ---
 
+## Mới trong 2.0
+
+- **SOS kèm địa chỉ thật** thay cho tọa độ trần: số nhà, đường, phường, quận (Android Geocoder, dự phòng OpenStreetMap), độ chính xác ± m, bản đồ nhỏ có ghim và nút **Chỉ đường** mở Google Maps. Người gửi không có mạng thì máy nhận tự tra khi có mạng.
+- **Trang chủ, đăng nhập/đăng ký, hồ sơ khẩn cấp** (số điện thoại, người liên hệ, nhóm máu, ghi chú y tế). Không đăng nhập vẫn gửi SOS được.
+- **Đồng bộ lên Supabase** khi có mạng: nhật ký hoạt động và SOS. Máy có Internet còn chuyển lên các SOS nghe được qua mesh, làm cầu nối cho người không có mạng.
+- **Web admin** (`admin/`, Next.js trên Vercel): xem và xử lý SOS trên bản đồ, quản lý người dùng (khóa, đổi vai trò), xem nhật ký hoạt động và nhật ký quản trị.
+- Bảo mật nằm ở database: RLS trên mọi bảng, có bộ test riêng (`supabase/tests`). Xem [kế hoạch](docs/V2_PLAN.md) và [hướng dẫn triển khai](docs/DEPLOY_V2.md).
+
 ## Chức năng
 
 ### 1. Khẩn cấp
@@ -141,6 +149,7 @@ docs/              Kiến trúc, kế hoạch kiểm thử, kết quả xác min
 
 ## Tài liệu
 
+- [Kế hoạch 2.0](docs/V2_PLAN.md) · [Triển khai Supabase + Vercel](docs/DEPLOY_V2.md)
 - [Kiến trúc và giao thức](docs/ARCHITECTURE.md)
 - [Kế hoạch kiểm thử](docs/TEST_PLAN.md)
 - [Kết quả xác minh](docs/VERIFICATION.md)

@@ -332,6 +332,8 @@ class MeshRouter {
         body.text,
         latitude: body.latitude,
         longitude: body.longitude,
+        accuracy: body.accuracy,
+        address: body.address,
         sender: name,
       ).encode(),
       recipient: recipient,
@@ -346,6 +348,8 @@ class MeshRouter {
         outgoing: true,
         latitude: body.latitude,
         longitude: body.longitude,
+        accuracy: body.accuracy,
+        address: body.placeName,
       ),
     );
     _broadcast(p);
@@ -433,6 +437,8 @@ class MeshRouter {
           body.text,
           latitude: body.latitude,
           longitude: body.longitude,
+          accuracy: body.accuracy,
+          address: body.address,
         ),
       );
       if (forMe) {

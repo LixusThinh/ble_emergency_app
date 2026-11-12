@@ -62,6 +62,7 @@ void main() {
       'contacts',
       'settings',
       'handoffs',
+      'outbox_events',
     });
     expect(
       await objects(db, 'index'),

@@ -49,3 +49,6 @@ app.*.map.json
 
 /dist/
 *.apk
+
+# Supabase URL and key for builds (docs/DEPLOY_V2.md)
+supabase.env.json

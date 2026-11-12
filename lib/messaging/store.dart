@@ -10,6 +10,16 @@ class StoredMessage {
   /// Distinct nearby phones this phone handed an outgoing message to.
   int handoffs;
   final double? latitude, longitude;
+
+  /// Metres the position is good to, as the sender measured it.
+  final double? accuracy;
+
+  /// Street address the sender's phone looked the position up as (signed).
+  final String? address;
+
+  /// Address this phone looked the position up as, when the sender could
+  /// not (it had no Internet).
+  String? lookedUpAddress;
   StoredMessage(
     this.packet,
     this.senderId,
@@ -19,7 +29,15 @@ class StoredMessage {
     this.handoffs = 0,
     this.latitude,
     this.longitude,
+    this.accuracy,
+    this.address,
+    this.lookedUpAddress,
   });
+
+  bool get hasLocation => latitude != null && longitude != null;
+
+  /// The address to show: the sender's own, else the one looked up here.
+  String? get placeName => address ?? lookedUpAddress;
 }
 
 /// Messages written or changed since a revision, newest first, and the
@@ -52,6 +70,9 @@ abstract interface class MessageStore {
   /// Records that neighbour [node] received our message [id]; counted once
   /// per node in [StoredMessage.handoffs].
   Future<void> recordHandoff(String id, String node);
+
+  /// Stores the address this phone found for message [id]'s position.
+  Future<void> saveLookedUpAddress(String id, String address);
   Future<void> close();
 }
 
@@ -165,6 +186,15 @@ class MemoryStore implements MessageStore {
     final m = _messages[id];
     if (m != null) {
       m.handoffs = nodes.length;
+      _revs[id] = ++_revision;
+    }
+  }
+
+  @override
+  Future<void> saveLookedUpAddress(String id, String address) async {
+    final m = _messages[id];
+    if (m != null) {
+      m.lookedUpAddress = address;
       _revs[id] = ++_revision;
     }
   }

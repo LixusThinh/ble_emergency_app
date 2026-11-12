@@ -9,6 +9,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:ble_emergency_app/app/storage.dart';
+import 'package:ble_emergency_app/app/controller.dart';
 import 'package:ble_emergency_app/main.dart';
 import 'package:ble_emergency_app/core/crypto_worker.dart';
 import 'package:ble_emergency_app/core/identity.dart';
@@ -176,6 +177,14 @@ void main() {
     expect(find.text('Tôi cần hỗ trợ khẩn cấp.'), findsOneWidget);
     // In the demo only the relay station is in range.
     expect(find.text('Đã đến 1 máy gần • tự gửi tiếp'), findsOneWidget);
+    // 2.0: the SOS carries a street address and accuracy, not bare numbers.
+    final address = find.byKey(const ValueKey('sos-address'));
+    expect(address, findsOneWidget);
+    expect(
+      tester.widget<SelectableText>(address).data,
+      AppController.demoPlace.address,
+    );
+    expect(find.textContaining('± 8 m'), findsOneWidget);
     await capture('02-messages');
     await tester.tap(find.text('Thiết bị'));
     await settle(tester);
@@ -190,7 +199,10 @@ void main() {
     expect(find.text('Tin riêng kiểm thử'), findsOneWidget);
     expect(find.text('Người nhận đã xác nhận'), findsOneWidget);
     await capture('04-private-ack');
-    await tester.tap(find.text('Đánh giá'));
+    await tester.tap(find.text('Tài khoản'));
+    await settle(tester);
+    await tester.scrollUntilVisible(find.text('Đánh giá mô phỏng'), 200);
+    await tester.tap(find.text('Đánh giá mô phỏng'));
     await settle(tester);
     await tester.drag(find.byType(Slider).first, const Offset(-180, 0));
     await settle(tester);

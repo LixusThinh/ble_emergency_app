@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.Address
+import android.location.Geocoder
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -20,6 +22,7 @@ import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 import java.security.KeyStore
 import java.security.SecureRandom
+import java.util.Locale
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -53,6 +56,7 @@ class MainActivity : FlutterActivity() {
                     "stop" -> { engine.stop(); stopService(Intent(this, MeshService::class.java)); result.success(null) }
                     "send" -> engine.send(call.argument<String>("id")!!, call.argument<ByteArray>("data")!!, result)
                     "location" -> withPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), result) { locate(result) }
+                    "geocode" -> geocode(call.argument<Double>("latitude")!!, call.argument<Double>("longitude")!!, result)
                     "loadIdentity" -> result.success(loadIdentity())
                     "saveIdentity" -> { saveIdentity(call.argument<String>("value")!!); result.success(null) }
                     "databaseDirectory" -> result.success(getDatabasePath("emergency_mesh.db").parent)
@@ -78,24 +82,61 @@ class MainActivity : FlutterActivity() {
         if (allowed) { try { action?.invoke() } catch (e: Exception) { result?.error("BLE_ERROR", e.message, null) } }
         else result?.error("PERMISSION", "Chưa cấp quyền. Mở Cài đặt ứng dụng để cấp quyền Bluetooth/vị trí.", null)
     }
+    /**
+     * Best position within 15 s: GPS and network fixes both count, the first
+     * one good to 25 m wins, otherwise the most accurate one seen. With no
+     * fix at all, a last known position under 10 minutes old is returned and
+     * marked stale. Needs only approximate permission when that is all the
+     * user granted, though then the fix is coarse.
+     */
     @Suppress("MissingPermission")
     private fun locate(result: MethodChannel.Result) {
         val manager = getSystemService(LocationManager::class.java)
-        if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED || !manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) { result.error("GPS", "Cần vị trí chính xác và bật GPS để lấy vị trí ngoại tuyến", null); return }
+        val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER).filter { runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
+        if (providers.isEmpty()) { result.error("GPS", "Hãy bật Vị trí (GPS) để gửi vị trí kèm SOS", null); return }
         var complete = false
+        var best: Location? = null
         lateinit var listener: LocationListener
-        val timeout = Runnable { if (!complete) { complete = true; manager.removeUpdates(listener); result.error("GPS_TIMEOUT", "Chưa có GPS sau 12 giây", null) } }
+        fun reply(location: Location?, stale: Boolean) {
+            if (complete) return
+            complete = true; manager.removeUpdates(listener)
+            if (location == null) { result.error("GPS_TIMEOUT", "Chưa bắt được vị trí sau 15 giây", null); return }
+            result.success(mapOf("latitude" to location.latitude, "longitude" to location.longitude, "accuracy" to (if (location.hasAccuracy()) location.accuracy.toDouble() else null), "time" to location.time, "provider" to location.provider, "stale" to stale))
+        }
+        val timeout = Runnable {
+            val fallback = best ?: providers.mapNotNull { runCatching { manager.getLastKnownLocation(it) }.getOrNull() }.filter { System.currentTimeMillis() - it.time < 600_000 }.minByOrNull { if (it.hasAccuracy()) it.accuracy else Float.MAX_VALUE }
+            reply(fallback, best == null && fallback != null)
+        }
         listener = object : LocationListener {
             override fun onLocationChanged(location: Location) {
                 if (complete) return
-                complete = true; manager.removeUpdates(this); handler.removeCallbacks(timeout)
-                result.success(mapOf("latitude" to location.latitude, "longitude" to location.longitude, "accuracy" to location.accuracy))
+                val b = best
+                if (b == null || (location.hasAccuracy() && (!b.hasAccuracy() || location.accuracy < b.accuracy))) best = location
+                if (location.hasAccuracy() && location.accuracy <= 25f) { handler.removeCallbacks(timeout); reply(location, false) }
             }
             override fun onProviderEnabled(provider: String) {}
             override fun onProviderDisabled(provider: String) {}
             @Deprecated("Legacy callback") override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
         }
-        manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0L, 0f, listener, Looper.getMainLooper()); handler.postDelayed(timeout, 12000)
+        for (p in providers) runCatching { manager.requestLocationUpdates(p, 0L, 0f, listener, Looper.getMainLooper()) }
+        handler.postDelayed(timeout, 15000)
+    }
+    /** Street address for a position, in Vietnamese, from the platform geocoder (needs Internet); null when it has none. */
+    private fun geocode(lat: Double, lon: Double, result: MethodChannel.Result) {
+        if (!Geocoder.isPresent()) { result.success(null); return }
+        val geocoder = Geocoder(this, Locale.forLanguageTag("vi-VN"))
+        fun line(list: List<Address>?): String? = list?.firstOrNull()?.let { a -> (0..a.maxAddressLineIndex).mapNotNull { a.getAddressLine(it) }.joinToString(", ").ifBlank { null } }
+        if (Build.VERSION.SDK_INT >= 33) {
+            geocoder.getFromLocation(lat, lon, 1, object : Geocoder.GeocodeListener {
+                override fun onGeocode(addresses: MutableList<Address>) { handler.post { result.success(line(addresses)) } }
+                override fun onError(errorMessage: String?) { handler.post { result.error("GEOCODE", errorMessage ?: "Không tra được địa chỉ", null) } }
+            })
+        } else {
+            Thread {
+                val value = runCatching { @Suppress("DEPRECATION") geocoder.getFromLocation(lat, lon, 1) }
+                handler.post { value.fold({ result.success(line(it)) }, { result.error("GEOCODE", it.message, null) }) }
+            }.start()
+        }
     }
     private fun key(alias: String = "mesh-identity-v1"): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }

@@ -119,6 +119,9 @@ class SqliteStore implements MessageStore {
         'outgoing': m.outgoing ? 1 : 0,
         'lat': m.latitude,
         'lon': m.longitude,
+        'accuracy': m.accuracy,
+        'address': m.address,
+        'looked_up_address': m.lookedUpAddress,
         'created': m.packet.timestamp,
         'rev': ++_revision,
       }, conflictAlgorithm: ConflictAlgorithm.ignore);
@@ -155,6 +158,16 @@ class SqliteStore implements MessageStore {
     });
   }
 
+  @override
+  Future<void> saveLookedUpAddress(String id, String address) async {
+    await db.update(
+      'messages',
+      {'looked_up_address': address, 'rev': ++_revision},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
   static const _select =
       'SELECT m.*, (SELECT COUNT(*) FROM handoffs h WHERE h.message_id = m.id) AS handoffs FROM messages m';
 
@@ -167,6 +180,9 @@ class SqliteStore implements MessageStore {
     handoffs: r['handoffs'] as int,
     latitude: (r['lat'] as num?)?.toDouble(),
     longitude: (r['lon'] as num?)?.toDouble(),
+    accuracy: (r['accuracy'] as num?)?.toDouble(),
+    address: r['address'] as String?,
+    lookedUpAddress: r['looked_up_address'] as String?,
   );
 
   @override
